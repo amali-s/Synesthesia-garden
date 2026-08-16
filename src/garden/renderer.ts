@@ -87,6 +87,10 @@ export class GardenRenderer {
 
     // Plants back-to-front by y
     const sorted = [...garden.plants].sort((a, b) => a.y - b.y)
+    const onsetPulse =
+      garden.lastOnset > 0
+        ? Math.max(0, 1 - (now - garden.lastOnset) / 200)
+        : 0
     for (const plant of sorted) {
       const age = (now - plant.born) / 1000
       if (plant.type === 'grass') {
@@ -101,6 +105,9 @@ export class GardenRenderer {
           plant.pitchT,
           age,
           sway + plant.x * 0.1,
+          plant.loudnessT,
+          plant.timbreT,
+          onsetPulse,
         )
       }
     }

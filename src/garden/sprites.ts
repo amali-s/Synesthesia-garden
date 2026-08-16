@@ -19,11 +19,13 @@ export const FLOWER_KINDS: FlowerKind[] = [
   'orchid',
 ]
 
-/** Pick flower shape from pitch band within vocal range */
-export function kindFromPitch(pitchT: number): FlowerKind {
+/** Pick flower shape: pitch walks the 7 kinds; timbre nudges ±~1 kind */
+export function kindFromPitch(pitchT: number, timbreT = 0.5): FlowerKind {
+  const base = pitchT * 6
+  const offset = (timbreT - 0.5) * 2.5
   const i = Math.min(
     FLOWER_KINDS.length - 1,
-    Math.floor(pitchT * FLOWER_KINDS.length),
+    Math.max(0, Math.round(base + offset)),
   )
   return FLOWER_KINDS[i]!
 }
@@ -106,29 +108,42 @@ export function drawFlower(
   pitchT: number,
   age: number,
   sway: number,
+  loudnessT: number,
+  timbreT: number,
+  onsetPulse: number,
 ): void {
-  const hsl = colorFromPitch(baseHueForKind(kind), pitchT)
+  const hsl = colorFromPitch(baseHueForKind(kind), pitchT, timbreT)
   const petal = hslCss(hsl)
-  const petalDeep = hslDarker(hsl, 14)
-  const petalLite = hslLighter(hsl, 12)
+  const contrast = 12 + timbreT * 10
+  const petalDeep = hslDarker(hsl, contrast)
+  const petalLite = hslLighter(hsl, 10 + timbreT * 8)
   const center: Hsl = { h: (hsl.h + 40) % 360, s: hsl.s * 0.7, l: 78 }
   const centerCss = hslCss(center)
   const grow = Math.min(1, age / 0.6)
-  const lean = Math.round(Math.sin(sway) * (1 + pitchT * 1.5))
+  const lean = Math.round(
+    Math.sin(sway) * (1 + pitchT * 1.5) + Math.sin(sway * 2.4) * onsetPulse * 2,
+  )
 
-  const stemH = Math.max(4, Math.round(10 * grow))
+  const stemH = Math.max(1, Math.round((5 + loudnessT * 9) * grow))
   stem(ctx, gx + lean, gy, stemH, scale)
 
   const hx = gx + lean
   const hy = gy - stemH
+  const bloomOpen = grow * (0.4 + 0.6 * loudnessT) + onsetPulse * 0.2
 
-  if (grow < 0.35) {
+  if (bloomOpen < 0.35) {
     px(ctx, hx, hy, petal, scale)
     px(ctx, hx, hy - 1, petalDeep, scale)
     px(ctx, hx - 1, hy, petalDeep, scale)
     px(ctx, hx + 1, hy, petalDeep, scale)
     return
   }
+
+  const bloomScale = Math.min(1.15, 0.5 + 0.5 * loudnessT + onsetPulse * 0.15)
+  ctx.save()
+  ctx.translate(hx * scale, hy * scale)
+  ctx.scale(bloomScale, bloomScale)
+  ctx.translate(-hx * scale, -hy * scale)
 
   switch (kind) {
     case 'daisy':
@@ -153,6 +168,8 @@ export function drawFlower(
       drawOrchid(ctx, hx, hy, scale, petal, petalDeep, petalLite)
       break
   }
+
+  ctx.restore()
 }
 
 function drawDaisy(

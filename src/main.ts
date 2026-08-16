@@ -1,5 +1,5 @@
 import './style.css'
-import { PitchDetector, pitchNorm } from './audio/pitch'
+import { PitchDetector, pitchNorm, SILENCE_THRESHOLD } from './audio/pitch'
 import { Garden } from './garden/world'
 import { GardenRenderer } from './garden/renderer'
 
@@ -29,10 +29,22 @@ app.innerHTML = `
         </div>
       </div>
       <div class="hud" aria-live="polite">
-        <div class="meter">
-          <span class="meter-label">Pitch</span>
-          <div class="meter-track"><div class="meter-fill" id="pitch-fill"></div></div>
-          <span class="meter-value" id="pitch-hz">— Hz</span>
+        <div class="meters">
+          <div class="meter">
+            <span class="meter-label">Pitch</span>
+            <div class="meter-track"><div class="meter-fill" id="pitch-fill"></div></div>
+            <span class="meter-value" id="pitch-hz">— Hz</span>
+          </div>
+          <div class="meter">
+            <span class="meter-label">Loudness</span>
+            <div class="meter-track"><div class="meter-fill" id="loudness-fill"></div></div>
+            <span class="meter-value"></span>
+          </div>
+          <div class="meter">
+            <span class="meter-label">Timbre</span>
+            <div class="meter-track"><div class="meter-fill" id="timbre-fill"></div></div>
+            <span class="meter-value"></span>
+          </div>
         </div>
         <div class="status" id="status">Tap listen to plant with your voice</div>
       </div>
@@ -44,7 +56,8 @@ app.innerHTML = `
     </div>
 
     <p class="hint">
-      Flowers bloom from vocal pitch (≈80–1000 Hz). Higher pitch deepens hue &amp; saturation.
+      Pitch walks the flower kind and hue. Loudness stretches stem and bloom.
+      Bright vowels nudge the kind and petal contrast. Onsets sway the bed.
       Quiet pauses grow grass.
     </p>
   </div>
@@ -55,6 +68,8 @@ const listenBtn = document.querySelector<HTMLButtonElement>('#listen-btn')!
 const clearBtn = document.querySelector<HTMLButtonElement>('#clear-btn')!
 const pitchFill = document.querySelector<HTMLDivElement>('#pitch-fill')!
 const pitchHz = document.querySelector<HTMLSpanElement>('#pitch-hz')!
+const loudnessFill = document.querySelector<HTMLDivElement>('#loudness-fill')!
+const timbreFill = document.querySelector<HTMLDivElement>('#timbre-fill')!
 const statusEl = document.querySelector<HTMLDivElement>('#status')!
 
 const garden = new Garden({ width: LOGICAL_W, height: LOGICAL_H, soilY: SOIL_Y })
@@ -63,7 +78,6 @@ const detector = new PitchDetector()
 function computeScale(): number {
   const maxW = Math.min(window.innerWidth - 48, 900)
   const maxH = Math.min(window.innerHeight * 0.58, 560)
-  // Keep logical pixels small on screen (2–3px typical)
   return Math.max(2, Math.min(3, Math.floor(Math.min(maxW / LOGICAL_W, maxH / LOGICAL_H))))
 }
 
@@ -79,7 +93,12 @@ function setStatus(text: string): void {
   statusEl.textContent = text
 }
 
-function updateHud(hz: number | null, isVoice: boolean): void {
+function updateHud(
+  hz: number | null,
+  isVoice: boolean,
+  loudnessT = 0,
+  timbreT = 0,
+): void {
   if (hz !== null && isVoice) {
     const t = pitchNorm(hz)
     pitchFill.style.width = `${Math.round(t * 100)}%`
@@ -89,6 +108,11 @@ function updateHud(hz: number | null, isVoice: boolean): void {
     pitchFill.style.width = '0%'
     pitchHz.textContent = '— Hz'
   }
+
+  loudnessFill.style.width = `${Math.round(loudnessT * 100)}%`
+  loudnessFill.style.background = `hsl(42 ${28 + loudnessT * 40}% ${58}%)`
+  timbreFill.style.width = `${Math.round(timbreT * 100)}%`
+  timbreFill.style.background = `hsl(${175 + timbreT * 90} ${30 + timbreT * 28}% ${58}%)`
 }
 
 listenBtn.addEventListener('click', async () => {
@@ -136,12 +160,18 @@ function frame(now: number): void {
       smoothedHz =
         smoothedHz === null ? sample.hz : smoothedHz * 0.7 + sample.hz * 0.3
       livePitchT = pitchNorm(smoothedHz)
-      updateHud(smoothedHz, true)
+      updateHud(smoothedHz, true, sample.loudnessT, sample.timbreT)
       setStatus(`Blooming · ${Math.round(smoothedHz)} Hz`)
     } else {
       livePitchT = null
-      updateHud(null, false)
-      if (sample.rms < 0.012) {
+      const showMeters = sample.rms >= SILENCE_THRESHOLD
+      updateHud(
+        null,
+        false,
+        showMeters ? sample.loudnessT : 0,
+        showMeters ? sample.timbreT : 0,
+      )
+      if (sample.rms < SILENCE_THRESHOLD) {
         setStatus('Pause · grass is sprouting')
       }
     }

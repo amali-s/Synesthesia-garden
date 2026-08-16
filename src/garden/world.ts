@@ -9,6 +9,8 @@ export type Plant =
       y: number
       kind: FlowerKind
       pitchT: number
+      loudnessT: number
+      timbreT: number
       hz: number
       born: number
       baseHue: number
@@ -38,6 +40,7 @@ const CELL_H = 9
 
 export class Garden {
   plants: Plant[] = []
+  lastOnset = 0
   readonly config: GardenConfig
 
   private lastSpawn = 0
@@ -61,17 +64,20 @@ export class Garden {
     this.pauseAccum = 0
     this.lastSpawn = 0
     this.lastVoice = 0
+    this.lastOnset = 0
   }
 
   /**
    * Feed a pitch sample. Voice → flower; sustained pause → grass.
    */
   ingest(sample: PitchSample, now: number): void {
+    if (sample.onset) this.lastOnset = now
+
     if (sample.isVoice && sample.hz !== null) {
       this.lastVoice = now
       this.pauseAccum = 0
       if (now - this.lastSpawn >= SPAWN_COOLDOWN_MS) {
-        this.spawnFlower(sample.hz, now)
+        this.spawnFlower(sample, now)
         this.lastSpawn = now
       }
       return
@@ -111,9 +117,10 @@ export class Garden {
     }
   }
 
-  private spawnFlower(hz: number, now: number): void {
+  private spawnFlower(sample: PitchSample, now: number): void {
+    const hz = sample.hz!
     const pitchT = pitchNorm(hz)
-    const kind = kindFromPitch(pitchT)
+    const kind = kindFromPitch(pitchT, sample.timbreT)
     const hueIndex = Math.floor(pitchT * FLOWER_BASE_HUES.length) % FLOWER_BASE_HUES.length
     const { x, y } = this.nextSlot()
     this.plants.push({
@@ -122,6 +129,8 @@ export class Garden {
       y,
       kind,
       pitchT,
+      loudnessT: sample.loudnessT,
+      timbreT: sample.timbreT,
       hz,
       born: now,
       baseHue: FLOWER_BASE_HUES[hueIndex]!,

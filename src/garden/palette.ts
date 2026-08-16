@@ -37,11 +37,12 @@ export type Hsl = { h: number; s: number; l: number }
 
 /**
  * Higher pitch → higher hue shift + saturation.
+ * Bright timbre slightly boosts saturation for petal contrast.
  * Kept soft so blooms stay in the Nouveau jewel range.
  */
-export function colorFromPitch(baseHue: number, pitchT: number): Hsl {
+export function colorFromPitch(baseHue: number, pitchT: number, timbreT = 0.5): Hsl {
   const h = (baseHue + pitchT * 42) % 360
-  const s = 28 + pitchT * 44
+  const s = 28 + pitchT * 44 + (timbreT - 0.5) * 16
   const l = 68 - pitchT * 14
   return { h, s, l }
 }
