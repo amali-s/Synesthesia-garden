@@ -3,7 +3,7 @@
 Living snapshot of Synesthesia Garden. Update this file at the start of a session (if the repo moved) and at the end of any phase or sizable change.
 
 **Last reviewed:** 2026-08-18  
-**Active phase:** none (Phase 3 done)  
+**Active phase:** none (Phases 1–3 done)  
 **Next recommended work:** [Phase 4 — Keep what grew](./ROADMAP.md#phase-4--keep-what-grew)
 
 Plan and acceptance criteria: [`ROADMAP.md`](./ROADMAP.md)
@@ -12,9 +12,9 @@ Plan and acceptance criteria: [`ROADMAP.md`](./ROADMAP.md)
 
 ## What it is
 
-A pixel-art meadow that grows from **voice**: pitch, loudness, timbre, and rhythm become kind, hue, size, and motion. Microphone in, autocorrelation pitch detector, flowers from voice, grass from quiet. Art Nouveau frame and palette (Mucha / Tiffany jewel tones).
+A pixel-art meadow that grows from **voice or music already playing on the device**: pitch, loudness, timbre, and rhythm become kind, hue, size, and motion. Speaker mode uses the microphone; Music mode captures tab/window/system audio. Autocorrelation pitch detector; flowers from pitched sound, grass from quiet. Art Nouveau frame and palette (Mucha / Tiffany jewel tones).
 
-Shipped loop: **Listen → speak/hum → flowers; pause → grass in gaps; Stop; Clear garden.**
+Shipped loop: **Speaker or Music → Listen → flowers; pause → grass in gaps; Stop; Clear garden.**
 
 ---
 
@@ -23,6 +23,7 @@ Shipped loop: **Listen → speak/hum → flowers; pause → grass in gaps; Stop;
 | Area | Status |
 | --- | --- |
 | Mic pitch garden | **Shipped** — Listen / Stop / Clear |
+| Speaker vs Music listen | **Shipped** — top-bar toggle; Music uses `getDisplayMedia` + Share audio |
 | Pitch → kind + hue | **Shipped** — log2 80–1000 Hz |
 | Loudness → stem + bloom | **Shipped** — log RMS, AGC off |
 | Timbre → kind nudge + contrast | **Shipped** — spectral centroid |
@@ -32,7 +33,7 @@ Shipped loop: **Listen → speak/hum → flowers; pause → grass in gaps; Stop;
 | Organic placement | **Shipped** — same-pitch clusters + jitter |
 | Lifecycle | **Shipped** — seed → bloom → rest; oldest wilt instead of splice |
 | Listen-time sky | **Shipped** — sky/mist shift over ~9 min of listening |
-| Local file / song playback | **Built, unhooked** — `SongPlayer` + CSS, not in `main.ts` |
+| Local file / song playback | **Deferred** — `SongPlayer` + CSS exist, not in `main.ts` (see Later) |
 | Spotify previews | **Hidden** — API + Vite plugin exist; UI gone |
 | Qobuz streaming | **Hidden / deferred** — API + Vite plugin exist; UI gone |
 | Export / share | **Not started** |
@@ -43,25 +44,28 @@ Shipped loop: **Listen → speak/hum → flowers; pause → grass in gaps; Stop;
 
 ## What works in the running app
 
-UI in `src/main.ts` is mic-only, full-page meadow:
+UI in `src/main.ts` is a full-page meadow with two listen sources (one at a time):
 
-- **Top bar** — Listen, Stop, Clear garden, pitch meter
-- **Listen / Stop** — `getUserMedia`, echo cancellation / noise suppression on, **AGC off**
+- **Top bar** — Listen, Stop, Clear garden, **Speaker | Music**, pitch meter
+- **Speaker** (default) — `getUserMedia`, echo cancellation / noise suppression on, **AGC off**, vocal 80–1000 Hz
+- **Music** — `getDisplayMedia` with audio required; video track muted/ignored; echo cancel / noise suppress / AGC **off**; wider pitch window (50–2000 Hz) for planting; `pitchNorm` still 80–1000 Hz. Capture is **not** played through the garden (no double audio)
+- **Listen / Stop** — uses the selected mode; switching mode while listening stops the current stream, then starts the new one
 - **Clear garden** — instant reset of plants (listen-time sky keeps going)
 - **Pixel garden** — 320×200 logical, integer scale to leftover viewport, seven flower kinds, swaying grass, blocky clouds, Nouveau window chrome
 
 Pitch pipeline (`src/audio/pitch.ts`):
 
 - Autocorrelation + parabolic interpolation
-- Voice if RMS ≥ `0.012` and Hz in 80–1000
-- `pitchNorm` is **log2** in that range (drives kind walk + hue)
-- `loudnessT` log-maps RMS from silence to ~0.25
+- Speaker: plant if RMS ≥ `0.012` and Hz in 80–1000
+- Music: plant if RMS ≥ `0.008` and Hz in 50–2000 (`isVoice` is the plant gate for both)
+- `pitchNorm` is **log2** 80–1000 Hz (drives kind walk + hue; clamps outside)
+- `loudnessT` log-maps RMS from the mode’s silence floor to ~0.25
 - `timbreT` log-maps spectral centroid ~200–4000 Hz
 - Onset via spectral flux and positive d(RMS)/dt (~120 ms refractory)
 
 Garden (`src/garden/world.ts`):
 
-- Flower every 220 ms while voiced; stores `pitchT`, `loudnessT`, `timbreT`
+- Flower every 220 ms while pitched; stores `pitchT`, `loudnessT`, `timbreT`
 - Kind: `round(pitchT * 6 + (timbreT - 0.5) * 2.5)` clamped 0–6
 - Stem ~5–14 logical px × grow envelope; quiet = compact bloom, loud = full petals
 - Bright timbre raises petal contrast; onsets add ~200 ms extra sway + petal-open
@@ -71,6 +75,8 @@ Garden (`src/garden/world.ts`):
 - Lifecycle: seed (~0.8 s) → bloom (~12 s) → rest (droop) → wilt when over cap
 
 Manual checks (2026-08-15): sung scale walks all 7 kinds; low vs high → different kinds/hues; quiet vs belt at one pitch → stem/bloom only; oo vs ee at one pitch → kind + contrast; staccato refreshes onset, drone does not; silence → grass.
+
+Music path (2026-08-18): Speaker + Listen still mic-only; Music + Listen prompts tab/window share; no audio / cancel / Safari leaves Speaker working; streams are never mixed.
 
 ---
 
@@ -97,10 +103,15 @@ These files are in the tree; the live UI does not use them.
 
 Done. Leftover: `plant.baseHue` is still unused by `drawFlower` (it uses `baseHueForKind`); `FLOWER_BASE_HUES` overlaps that map.
 
-### Phase 2 — Playback
+### Phase 2 — Music vs Speaker
 
-- No file picker, no play bar, no `SongPlayer` wiring
-- Mic and media cannot be chosen in the UI (detector supports both)
+Done. Leftovers / honest limits:
+
+- Chrome/Edge tab share + “Share audio” is the reliable path; Safari is refused up front
+- Firefox / some OS combos may offer share without an audio track — status says so
+- Dominant pitch of the mix only (no source separation)
+- Mode is session-only (not persisted)
+- `SongPlayer` / file upload remains deferred (Later)
 
 ### Phase 3 — Garden feel
 
@@ -119,7 +130,7 @@ Done. Leftover: soil speckles still redraw every frame (Phase 5); loudness/timbr
 ### Phase 6 — Teach / a11y
 
 - HUD shows pitch only; no legend or note name
-- Listen has no `aria-pressed`; no keyboard shortcuts
+- Listen has no `aria-pressed`; no keyboard shortcuts (mode toggle does use `aria-pressed`)
 - No `prefers-reduced-motion`
 - Google Fonts CDN in `src/style.css`
 
@@ -136,7 +147,7 @@ Done. Leftover: soil speckles still redraw every frame (Phase 5); loudness/timbr
 | Phase | Name | Status |
 | --- | --- | --- |
 | 1 | Richer audio mapping | Done |
-| 2 | Local song playback | Code present, UI unhooked |
+| 2 | Music mode vs Speaker mode | Done |
 | 3 | Organic garden + lifecycle | Done |
 | 4 | Keep what grew (PNG / share) | Not started |
 | 5 | Canvas + pitch performance | Not started |
@@ -149,8 +160,8 @@ Done. Leftover: soil speckles still redraw every frame (Phase 5); loudness/timbr
 ## Layout (as of last review)
 
 ```
-src/main.ts                 UI + rAF loop (mic only; top bar + meadow)
-src/audio/pitch.ts          Detector + log pitch / loudness / timbre / onset
+src/main.ts                 UI + rAF loop (Speaker/Music top bar + meadow)
+src/audio/pitch.ts          Detector + mic / display capture + log pitch
 src/audio/songPlayer.ts     Unused by UI
 src/audio/spotifyUrl.ts     Unused by UI
 src/audio/qobuzUrl.ts       Unused by UI

@@ -2,8 +2,15 @@
 export const VOCAL_MIN_HZ = 80
 export const VOCAL_MAX_HZ = 1000
 
+/** Wider window for a music mix (instruments + voice). pitchNorm still uses vocal range. */
+export const MUSIC_MIN_HZ = 50
+export const MUSIC_MAX_HZ = 2000
+
 /** Below this RMS, treat as pause / silence */
 export const SILENCE_THRESHOLD = 0.012
+
+/** Tab/system capture is often quieter than a close mic */
+export const MUSIC_SILENCE_THRESHOLD = 0.008
 
 /** RMS that maps to loudnessT = 1 (belt / close-mic) */
 export const LOUDNESS_MAX_RMS = 0.25
@@ -12,9 +19,12 @@ export const LOUDNESS_MAX_RMS = 0.25
 export const TIMBRE_MIN_HZ = 200
 export const TIMBRE_MAX_HZ = 4000
 
+export type ListenMode = 'speaker' | 'music'
+
 export type PitchSample = {
   hz: number | null
   rms: number
+  /** Plantable pitch in the current mode’s window (voice for Speaker, mix pitch for Music) */
   isVoice: boolean
   loudnessT: number
   timbreT: number
@@ -22,17 +32,29 @@ export type PitchSample = {
   onset: boolean
 }
 
-type SourceKind = 'none' | 'mic' | 'media'
+export type DisplayAudioErrorReason = 'unsupported' | 'denied' | 'no-audio'
+
+export class DisplayAudioError extends Error {
+  readonly reason: DisplayAudioErrorReason
+
+  constructor(reason: DisplayAudioErrorReason, message: string) {
+    super(message)
+    this.name = 'DisplayAudioError'
+    this.reason = reason
+  }
+}
+
+type SourceKind = 'none' | 'mic' | 'display' | 'media'
 
 /**
  * Autocorrelation pitch detector tuned for vocal fundamentals.
- * Accepts microphone or any AudioNode / media element source.
+ * Accepts microphone, display/tab audio, or any AudioNode / media element source.
  */
 export class PitchDetector {
   private ctx: AudioContext
   private analyser: AnalyserNode
   private stream: MediaStream | null = null
-  private micSource: MediaStreamAudioSourceNode | null = null
+  private streamSource: MediaStreamAudioSourceNode | null = null
   private mediaSource: MediaElementAudioSourceNode | null = null
   private mediaElement: HTMLMediaElement | null = null
   private externalSource: AudioNode | null = null
@@ -44,6 +66,8 @@ export class PitchDetector {
   private prevRms = 0
   private fluxMean = 0
   private lastOnsetTime = -1
+  /** Fired when the user stops a display-audio share from the browser UI. */
+  onCaptureEnded: (() => void) | null = null
 
   constructor() {
     this.ctx = new AudioContext()
@@ -63,16 +87,33 @@ export class PitchDetector {
     return this.kind === 'mic'
   }
 
+  get isDisplay(): boolean {
+    return this.kind === 'display'
+  }
+
   get isMedia(): boolean {
     return this.kind === 'media'
+  }
+
+  get silenceThreshold(): number {
+    return this.kind === 'display' ? MUSIC_SILENCE_THRESHOLD : SILENCE_THRESHOLD
   }
 
   async resume(): Promise<void> {
     if (this.ctx.state === 'suspended') await this.ctx.resume()
   }
 
+  /** Start listening. Speaker = microphone; Music = tab/window/system audio. */
+  async start(options: { mode?: ListenMode } = {}): Promise<void> {
+    if (options.mode === 'music') {
+      await this.startDisplayAudio()
+      return
+    }
+    await this.startMic()
+  }
+
   /** Start listening to the microphone (no speaker feedback). */
-  async start(): Promise<void> {
+  async startMic(): Promise<void> {
     if (this.kind === 'mic') {
       await this.resume()
       return
@@ -86,10 +127,86 @@ export class PitchDetector {
       },
       video: false,
     })
-    this.micSource = this.ctx.createMediaStreamSource(this.stream)
-    this.micSource.connect(this.analyser)
+    this.streamSource = this.ctx.createMediaStreamSource(this.stream)
+    this.streamSource.connect(this.analyser)
     this.setHearing(false)
     this.kind = 'mic'
+    await this.resume()
+  }
+
+  /**
+   * Capture tab / window / system audio (not the room via the mic).
+   * Video is requested so Chrome/Edge can offer “Share audio”; the video
+   * track is muted and ignored. Capture is never routed to speakers.
+   */
+  async startDisplayAudio(): Promise<void> {
+    if (this.kind === 'display') {
+      await this.resume()
+      return
+    }
+
+    if (!displayAudioCaptureSupported()) {
+      throw new DisplayAudioError(
+        'unsupported',
+        'This browser can’t capture tab or system audio. Use Speaker, or try Chrome or Edge.',
+      )
+    }
+
+    this.detachInput()
+
+    let stream: MediaStream
+    try {
+      stream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+        },
+        // Chrome: include OS audio when sharing a screen
+        systemAudio: 'include',
+      } as DisplayMediaStreamOptions)
+    } catch (err) {
+      if (isUserDismissedCapture(err)) {
+        throw new DisplayAudioError(
+          'denied',
+          'Share cancelled — play a song, then Listen and share that tab or window with audio',
+        )
+      }
+      throw new DisplayAudioError(
+        'unsupported',
+        'This browser can’t capture tab or system audio. Use Speaker, or try Chrome or Edge.',
+      )
+    }
+
+    for (const track of stream.getVideoTracks()) {
+      track.enabled = false
+    }
+
+    const audioTracks = stream.getAudioTracks()
+    if (audioTracks.length === 0) {
+      stream.getTracks().forEach((t) => t.stop())
+      throw new DisplayAudioError(
+        'no-audio',
+        'That share had no audio — choose a tab or window and tick “Share audio”',
+      )
+    }
+
+    this.stream = stream
+    this.streamSource = this.ctx.createMediaStreamSource(stream)
+    this.streamSource.connect(this.analyser)
+    this.setHearing(false)
+    this.kind = 'display'
+
+    const onEnded = (): void => {
+      if (this.kind !== 'display') return
+      this.detachInput()
+      this.onCaptureEnded?.()
+    }
+    for (const track of audioTracks) {
+      track.addEventListener('ended', onEnded)
+    }
+
     await this.resume()
   }
 
@@ -102,7 +219,7 @@ export class PitchDetector {
     options: { toDestination?: boolean } = {},
   ): Promise<void> {
     const toDestination = options.toDestination ?? true
-    this.stopMicTracks()
+    this.stopStreamTracks()
     this.externalSource?.disconnect()
     this.externalSource = null
 
@@ -134,7 +251,7 @@ export class PitchDetector {
     await this.resume()
   }
 
-  /** Stop mic / detach graph inputs. Keeps media element source node for reuse. */
+  /** Stop mic / display / detach graph inputs. Keeps media element source node for reuse. */
   stop(): void {
     this.detachInput()
   }
@@ -144,11 +261,12 @@ export class PitchDetector {
     this.analyser.getFloatFrequencyData(this.freqBuf as Float32Array<ArrayBuffer>)
     const rms = rootMeanSquare(this.buf)
     const { flux, centroidHz } = this.spectrumFeatures()
-    const loudnessT = loudnessNorm(rms)
+    const silence = this.silenceThreshold
+    const loudnessT = loudnessNorm(rms, silence)
     const timbreT = centroidHz === null ? 0.5 : timbreNorm(centroidHz)
-    const onset = this.detectOnset(rms, flux)
+    const onset = this.detectOnset(rms, flux, silence)
 
-    if (rms < SILENCE_THRESHOLD) {
+    if (rms < silence) {
       return {
         hz: null,
         rms,
@@ -159,9 +277,12 @@ export class PitchDetector {
         onset: false,
       }
     }
-    const hz = detectPitchHz(this.buf, this.ctx.sampleRate)
-    const inRange =
-      hz !== null && hz >= VOCAL_MIN_HZ && hz <= VOCAL_MAX_HZ
+
+    const music = this.kind === 'display'
+    const minHz = music ? MUSIC_MIN_HZ : VOCAL_MIN_HZ
+    const maxHz = music ? MUSIC_MAX_HZ : VOCAL_MAX_HZ
+    const hz = detectPitchHz(this.buf, this.ctx.sampleRate, minHz, maxHz)
+    const inRange = hz !== null && hz >= minHz && hz <= maxHz
     return {
       hz: inRange ? hz : null,
       rms,
@@ -191,14 +312,14 @@ export class PitchDetector {
     return { flux, centroidHz: den < 1e-8 ? null : num / den }
   }
 
-  private detectOnset(rms: number, flux: number): boolean {
+  private detectOnset(rms: number, flux: number, silence: number): boolean {
     const prev = this.prevRms
     const dRms = rms - prev
     this.prevRms = rms
     const fluxThresh = Math.max(0.04, this.fluxMean * 1.65)
     this.fluxMean = this.fluxMean * 0.88 + flux * 0.12
 
-    if (rms < SILENCE_THRESHOLD) return false
+    if (rms < silence) return false
     const t = this.ctx.currentTime
     if (this.lastOnsetTime >= 0 && t - this.lastOnsetTime < 0.12) return false
 
@@ -222,22 +343,37 @@ export class PitchDetector {
     this.hearing = hear
   }
 
-  private stopMicTracks(): void {
-    this.micSource?.disconnect()
-    this.micSource = null
+  private stopStreamTracks(): void {
+    this.streamSource?.disconnect()
+    this.streamSource = null
     this.stream?.getTracks().forEach((t) => t.stop())
     this.stream = null
   }
 
   private detachInput(): void {
-    this.stopMicTracks()
+    // Clear kind first so track `ended` from our own stop() is ignored.
+    this.kind = 'none'
+    this.stopStreamTracks()
     this.externalSource?.disconnect()
     this.externalSource = null
     this.mediaSource?.disconnect()
     // Keep mediaSource + mediaElement for reuse; just disconnect from analyser
     this.setHearing(false)
-    this.kind = 'none'
   }
+}
+
+export function displayAudioCaptureSupported(): boolean {
+  if (typeof navigator === 'undefined' || typeof navigator.mediaDevices?.getDisplayMedia !== 'function') {
+    return false
+  }
+  const ua = navigator.userAgent
+  const isSafari = /Safari/i.test(ua) && !/Chrome|Chromium|Edg|Android/i.test(ua)
+  return !isSafari
+}
+
+function isUserDismissedCapture(err: unknown): boolean {
+  if (!(err instanceof DOMException)) return false
+  return err.name === 'NotAllowedError' || err.name === 'AbortError'
 }
 
 function rootMeanSquare(buf: Float32Array): number {
@@ -250,10 +386,15 @@ function rootMeanSquare(buf: Float32Array): number {
  * Autocorrelation with parabolic interpolation.
  * Returns fundamental frequency in Hz, or null if unclear.
  */
-function detectPitchHz(buf: Float32Array, sampleRate: number): number | null {
+function detectPitchHz(
+  buf: Float32Array,
+  sampleRate: number,
+  minHz: number,
+  maxHz: number,
+): number | null {
   const size = buf.length
-  const minLag = Math.floor(sampleRate / VOCAL_MAX_HZ)
-  const maxLag = Math.floor(sampleRate / VOCAL_MIN_HZ)
+  const minLag = Math.floor(sampleRate / maxHz)
+  const maxLag = Math.floor(sampleRate / minHz)
 
   let mean = 0
   for (let i = 0; i < size; i++) mean += buf[i]!
@@ -311,14 +452,14 @@ function logNorm(value: number, min: number, max: number): number {
   return Math.log(value / min) / Math.log(max / min)
 }
 
-/** Map Hz into 0–1 on a log2 (equal-temperament) scale */
+/** Map Hz into 0–1 on a log2 (equal-temperament) scale — vocal range, clamped outside it */
 export function pitchNorm(hz: number): number {
   return logNorm(hz, VOCAL_MIN_HZ, VOCAL_MAX_HZ)
 }
 
 /** Map RMS into 0–1 from silence up to a belt */
-export function loudnessNorm(rms: number): number {
-  return logNorm(rms, SILENCE_THRESHOLD, LOUDNESS_MAX_RMS)
+export function loudnessNorm(rms: number, silence = SILENCE_THRESHOLD): number {
+  return logNorm(rms, silence, LOUDNESS_MAX_RMS)
 }
 
 /** Map spectral centroid Hz into 0–1 (dark → bright) */

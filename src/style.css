@@ -340,8 +340,53 @@ body {
 .controls {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 0.4rem;
   justify-content: flex-start;
+}
+
+.mode-toggle {
+  display: inline-flex;
+  align-items: stretch;
+  border: 2px solid var(--gold-deep);
+  border-radius: 999px 12px 999px 12px;
+  overflow: hidden;
+  background: var(--cream);
+  box-shadow: 2px 2px 0 var(--shadow);
+}
+
+.mode-btn {
+  font-family: 'Cormorant Garamond', 'Pixelify Sans', serif;
+  font-size: 0.92rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  padding: 0.22rem 0.72rem;
+  border: 0;
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.mode-btn + .mode-btn {
+  border-left: 1px solid color-mix(in srgb, var(--gold-deep) 38%, transparent);
+}
+
+.mode-btn:hover {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--gold) 18%, var(--cream));
+}
+
+.mode-btn[aria-pressed='true'] {
+  color: var(--ink);
+}
+
+.mode-btn[aria-pressed='true']#mode-speaker {
+  background: color-mix(in srgb, var(--leaf) 42%, var(--cream));
+}
+
+.mode-btn[aria-pressed='true']#mode-music {
+  background: color-mix(in srgb, var(--teal) 38%, var(--cream));
 }
 
 .btn {
