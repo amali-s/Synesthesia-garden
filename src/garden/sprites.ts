@@ -77,26 +77,37 @@ export function drawGrass(
   scale: number,
   variant: number,
   sway: number,
+  grow = 1,
+  wiltT = 0,
 ): void {
-  const tip = Math.round(Math.sin(sway + variant) * 1.5)
+  const height = Math.max(0.25, grow * (1 - wiltT * 0.55))
+  ctx.save()
+  ctx.globalAlpha = 1 - wiltT * 0.85
+  const tip = Math.round(Math.sin(sway + variant) * 1.5 * (1 - wiltT))
   const blades: Array<[number, number, number, number]> = [
-    [0, 0, tip, -6 - (variant % 3)],
-    [1, 0, 1 + tip, -8 - (variant % 2)],
-    [-1, 0, -1 - tip, -5],
-    [2, 0, 2 + Math.round(tip * 0.5), -4],
+    [0, 0, tip, Math.round((-6 - (variant % 3)) * height)],
+    [1, 0, 1 + tip, Math.round((-8 - (variant % 2)) * height)],
+    [-1, 0, -1 - tip, Math.round(-5 * height)],
+    [2, 0, 2 + Math.round(tip * 0.5), Math.round(-4 * height)],
   ]
+  const dry = wiltT > 0.35
   for (const [x0, y0, x1, y1] of blades) {
     const steps = Math.abs(y1 - y0) + Math.abs(x1 - x0) + 1
     for (let s = 0; s < steps; s++) {
       const t = s / Math.max(1, steps - 1)
       const x = Math.round(x0 + (x1 - x0) * t)
       const y = Math.round(y0 + (y1 - y0) * t)
-      const color = s > steps - 3 ? PASTEL.grassLight : PASTEL.grass
+      const color = dry
+        ? PASTEL.soilLight
+        : s > steps - 3
+          ? PASTEL.grassLight
+          : PASTEL.grass
       px(ctx, gx + x, gy + y, color, scale)
     }
   }
   px(ctx, gx, gy, PASTEL.grassDark, scale)
   px(ctx, gx + 1, gy, PASTEL.grassDark, scale)
+  ctx.restore()
 }
 
 export function drawFlower(
@@ -111,35 +122,55 @@ export function drawFlower(
   loudnessT: number,
   timbreT: number,
   onsetPulse: number,
+  restT = 0,
+  wiltT = 0,
 ): void {
-  const hsl = colorFromPitch(baseHueForKind(kind), pitchT, timbreT)
+  let hsl = colorFromPitch(baseHueForKind(kind), pitchT, timbreT)
+  if (wiltT > 0) {
+    hsl = {
+      h: hsl.h + (32 - hsl.h) * wiltT,
+      s: hsl.s * (1 - wiltT * 0.7),
+      l: hsl.l + (38 - hsl.l) * wiltT,
+    }
+  }
   const petal = hslCss(hsl)
   const contrast = 12 + timbreT * 10
   const petalDeep = hslDarker(hsl, contrast)
   const petalLite = hslLighter(hsl, 10 + timbreT * 8)
   const center: Hsl = { h: (hsl.h + 40) % 360, s: hsl.s * 0.7, l: 78 }
   const centerCss = hslCss(center)
-  const grow = Math.min(1, age / 0.6)
+  const grow = Math.min(1, age / 0.8)
+  const droop = restT * 1.2 + wiltT * 2.2
   const lean = Math.round(
-    Math.sin(sway) * (1 + pitchT * 1.5) + Math.sin(sway * 2.4) * onsetPulse * 2,
+    Math.sin(sway) * (1 + pitchT * 1.5) * (1 - wiltT) +
+      Math.sin(sway * 2.4) * onsetPulse * 2 +
+      droop,
   )
 
-  const stemH = Math.max(1, Math.round((5 + loudnessT * 9) * grow))
+  ctx.save()
+  ctx.globalAlpha = 1 - wiltT * 0.82
+  const stemH = Math.max(1, Math.round((5 + loudnessT * 9) * grow * (1 - wiltT * 0.4)))
   stem(ctx, gx + lean, gy, stemH, scale)
 
   const hx = gx + lean
   const hy = gy - stemH
-  const bloomOpen = grow * (0.4 + 0.6 * loudnessT) + onsetPulse * 0.2
+  const bloomOpen =
+    grow * (0.4 + 0.6 * loudnessT) * (1 - restT * 0.2) * (1 - wiltT * 0.45) +
+    onsetPulse * 0.2
 
   if (bloomOpen < 0.35) {
     px(ctx, hx, hy, petal, scale)
     px(ctx, hx, hy - 1, petalDeep, scale)
     px(ctx, hx - 1, hy, petalDeep, scale)
     px(ctx, hx + 1, hy, petalDeep, scale)
+    ctx.restore()
     return
   }
 
-  const bloomScale = Math.min(1.15, 0.5 + 0.5 * loudnessT + onsetPulse * 0.15)
+  const bloomScale = Math.min(
+    1.15,
+    (0.5 + 0.5 * loudnessT + onsetPulse * 0.15) * (1 - restT * 0.12) * (1 - wiltT * 0.35),
+  )
   ctx.save()
   ctx.translate(hx * scale, hy * scale)
   ctx.scale(bloomScale, bloomScale)
@@ -169,6 +200,7 @@ export function drawFlower(
       break
   }
 
+  ctx.restore()
   ctx.restore()
 }
 

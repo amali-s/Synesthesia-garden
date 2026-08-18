@@ -2,6 +2,8 @@ import { pitchNorm, type PitchSample } from '../audio/pitch'
 import { FLOWER_BASE_HUES } from './palette'
 import { kindFromPitch, type FlowerKind } from './sprites'
 
+export type PlantLife = 'seed' | 'bloom' | 'rest' | 'wilt'
+
 export type Plant =
   | {
       type: 'flower'
@@ -14,6 +16,7 @@ export type Plant =
       hz: number
       born: number
       baseHue: number
+      wiltStarted: number | null
     }
   | {
       type: 'grass'
@@ -21,6 +24,7 @@ export type Plant =
       y: number
       variant: number
       born: number
+      wiltStarted: number | null
     }
 
 export type GardenConfig = {
@@ -34,20 +38,30 @@ export type GardenConfig = {
 
 const SPAWN_COOLDOWN_MS = 220
 const PAUSE_GRASS_MS = 360
-const MAX_PLANTS = 480
-const CELL_W = 10
-const CELL_H = 9
+/** Living plants before the oldest begin to wilt */
+const MAX_LIVING = 560
+const CELL_W = 8
+const CELL_H = 7
+const PITCH_KIN = 0.12
+const CLUSTER_RADIUS = 26
+
+export const SEED_MS = 800
+export const BLOOM_MS = 12_000
+export const REST_EASE_MS = 8_000
+export const WILT_MS = 2_600
 
 export class Garden {
   plants: Plant[] = []
   lastOnset = 0
+  /** Accumulated time while ingesting (listening), for sky */
+  listenMs = 0
   readonly config: GardenConfig
 
   private lastSpawn = 0
   private lastVoice = 0
   private pauseAccum = 0
-  private cursorCol = 0
-  private row = 0
+  private lastTick = 0
+  private frameDt = 16
   private cols: number
   private rows: number
 
@@ -59,8 +73,6 @@ export class Garden {
 
   clear(): void {
     this.plants = []
-    this.cursorCol = 0
-    this.row = 0
     this.pauseAccum = 0
     this.lastSpawn = 0
     this.lastVoice = 0
@@ -68,9 +80,28 @@ export class Garden {
   }
 
   /**
-   * Feed a pitch sample. Voice → flower; sustained pause → grass.
+   * Advance wilt / listen clock. Call once per frame, before ingest.
+   */
+  tick(now: number, listening: boolean): void {
+    const dt = this.lastTick > 0 ? Math.min(48, Math.max(0, now - this.lastTick)) : 16
+    this.lastTick = now
+    this.frameDt = dt
+    if (listening) this.listenMs += dt
+    if (this.plants.some((p) => p.wiltStarted !== null)) {
+      this.plants = this.plants.filter((p) => {
+        if (p.wiltStarted === null) return true
+        return now - p.wiltStarted < WILT_MS
+      })
+    }
+    this.startWilts(now)
+  }
+
+  /**
+   * Feed a pitch sample. Voice → flower; sustained pause → grass in gaps.
    */
   ingest(sample: PitchSample, now: number): void {
+    const dt = this.frameDt
+
     if (sample.onset) this.lastOnset = now
 
     if (sample.isVoice && sample.hz !== null) {
@@ -83,12 +114,10 @@ export class Garden {
       return
     }
 
-    // Silence / pause → grow grass
     if (this.lastVoice === 0 && this.plants.length === 0) {
-      // Warm-up: still plant a little grass so the bed isn't empty
-      this.pauseAccum += 16
+      this.pauseAccum += dt
     } else if (now - this.lastVoice > 180 || this.lastVoice === 0) {
-      this.pauseAccum += 16
+      this.pauseAccum += dt
     }
 
     if (this.pauseAccum >= PAUSE_GRASS_MS) {
@@ -98,23 +127,123 @@ export class Garden {
     }
   }
 
-  private nextSlot(): { x: number; y: number } {
-    const col = this.cursorCol
-    const row = this.row
-    this.cursorCol++
-    if (this.cursorCol >= this.cols) {
-      this.cursorCol = 0
-      this.row = (this.row + 1) % this.rows
+  private startWilts(now: number): void {
+    const living = this.plants.filter((p) => p.wiltStarted === null)
+    const over = living.length - MAX_LIVING
+    if (over <= 0) return
+    living.sort((a, b) => a.born - b.born)
+    for (let i = 0; i < over; i++) {
+      living[i]!.wiltStarted = now
     }
-    // Jitter so the bed feels organic
-    const jitterX = ((col * 17 + row * 3) % 7) - 3
-    const jitterY = ((col * 7 + row * 11) % 5) - 2
-    const x = 6 + col * CELL_W + jitterX
-    const y = this.config.soilY + 8 + row * CELL_H + jitterY
+  }
+
+  private soilBounds(): { x0: number; x1: number; y0: number; y1: number } {
     return {
-      x: clamp(x, 4, this.config.width - 5),
-      y: clamp(y, this.config.soilY + 4, this.config.height - 4),
+      x0: 6,
+      x1: this.config.width - 6,
+      y0: this.config.soilY + 8,
+      y1: this.config.height - 5,
     }
+  }
+
+  private occupied(): Set<string> {
+    const keys = new Set<string>()
+    for (const p of this.plants) {
+      if (p.wiltStarted !== null) continue
+      keys.add(this.cellKey(p.x, p.y))
+    }
+    return keys
+  }
+
+  private cellKey(x: number, y: number): string {
+    const col = Math.round(x / CELL_W)
+    const row = Math.round((y - this.config.soilY) / CELL_H)
+    return `${col},${row}`
+  }
+
+  private clampPos(x: number, y: number): { x: number; y: number } {
+    const b = this.soilBounds()
+    return {
+      x: clamp(x, b.x0, b.x1),
+      y: clamp(y, b.y0, b.y1),
+    }
+  }
+
+  /** Place near same-pitch blooms; otherwise open a new cluster with jitter. */
+  private placeFlower(pitchT: number): { x: number; y: number } {
+    const occ = this.occupied()
+    const kin = this.plants.filter(
+      (p): p is Extract<Plant, { type: 'flower' }> =>
+        p.type === 'flower' &&
+        p.wiltStarted === null &&
+        Math.abs(p.pitchT - pitchT) < PITCH_KIN,
+    )
+
+    const tryPos = (x: number, y: number): { x: number; y: number } | null => {
+      const p = this.clampPos(x, y)
+      if (occ.has(this.cellKey(p.x, p.y))) return null
+      return p
+    }
+
+    if (kin.length > 0) {
+      const anchor = kin[Math.floor(Math.random() * kin.length)]!
+      for (let n = 0; n < 14; n++) {
+        const ang = Math.random() * Math.PI * 2
+        const dist = 5 + Math.random() * CLUSTER_RADIUS
+        const hit = tryPos(
+          anchor.x + Math.cos(ang) * dist + (Math.random() * 10 - 5),
+          anchor.y + Math.sin(ang) * dist * 0.55 + (Math.random() * 8 - 4),
+        )
+        if (hit) return hit
+      }
+    }
+
+    const b = this.soilBounds()
+    for (let n = 0; n < 16; n++) {
+      const x =
+        b.x0 +
+        (b.x1 - b.x0) * (0.12 + pitchT * 0.76) +
+        (Math.random() * 48 - 24)
+      const y = b.y0 + Math.random() * (b.y1 - b.y0)
+      const hit = tryPos(x, y)
+      if (hit) return hit
+    }
+
+    return this.clampPos(
+      b.x0 + Math.random() * (b.x1 - b.x0),
+      b.y0 + Math.random() * (b.y1 - b.y0),
+    )
+  }
+
+  /** Grass occupies empty cells, preferring gaps beside existing plants. */
+  private placeGrass(): { x: number; y: number } {
+    const occ = this.occupied()
+    const b = this.soilBounds()
+    const gaps: Array<{ x: number; y: number; score: number }> = []
+
+    for (let row = 0; row < this.rows; row++) {
+      for (let col = 0; col < this.cols; col++) {
+        const x = 4 + col * CELL_W + (Math.random() * 6 - 3)
+        const y = this.config.soilY + 6 + row * CELL_H + (Math.random() * 5 - 2)
+        const pos = this.clampPos(x, y)
+        if (occ.has(this.cellKey(pos.x, pos.y))) continue
+        const neighbors = neighborCount(occ, col, row)
+        if (neighbors === 0 && this.plants.length > 8) continue
+        gaps.push({ ...pos, score: neighbors })
+      }
+    }
+
+    if (gaps.length === 0) {
+      return this.clampPos(
+        b.x0 + Math.random() * (b.x1 - b.x0),
+        b.y0 + Math.random() * (b.y1 - b.y0),
+      )
+    }
+
+    gaps.sort((a, bGap) => bGap.score - a.score)
+    const prefer = gaps.filter((g) => g.score >= 1 && g.score <= 3)
+    const pool = prefer.length > 0 ? prefer : gaps.slice(0, Math.min(24, gaps.length))
+    return pool[Math.floor(Math.random() * pool.length)]!
   }
 
   private spawnFlower(sample: PitchSample, now: number): void {
@@ -122,7 +251,7 @@ export class Garden {
     const pitchT = pitchNorm(hz)
     const kind = kindFromPitch(pitchT, sample.timbreT)
     const hueIndex = Math.floor(pitchT * FLOWER_BASE_HUES.length) % FLOWER_BASE_HUES.length
-    const { x, y } = this.nextSlot()
+    const { x, y } = this.placeFlower(pitchT)
     this.plants.push({
       type: 'flower',
       x,
@@ -134,27 +263,57 @@ export class Garden {
       hz,
       born: now,
       baseHue: FLOWER_BASE_HUES[hueIndex]!,
+      wiltStarted: null,
     })
-    this.trim()
+    this.startWilts(now)
   }
 
   private spawnGrass(now: number): void {
-    const { x, y } = this.nextSlot()
+    const { x, y } = this.placeGrass()
     this.plants.push({
       type: 'grass',
       x,
       y,
       variant: Math.floor(Math.random() * 8),
       born: now,
+      wiltStarted: null,
     })
-    this.trim()
+    this.startWilts(now)
   }
+}
 
-  private trim(): void {
-    if (this.plants.length > MAX_PLANTS) {
-      this.plants.splice(0, this.plants.length - MAX_PLANTS)
+export type PlantLifeState = {
+  phase: PlantLife
+  grow: number
+  restT: number
+  wiltT: number
+}
+
+export function plantLife(plant: Plant, now: number): PlantLifeState {
+  if (plant.wiltStarted !== null) {
+    const wiltT = clamp((now - plant.wiltStarted) / WILT_MS, 0, 1)
+    return { phase: 'wilt', grow: Math.max(0.15, 1 - wiltT * 0.5), restT: 1, wiltT }
+  }
+  const age = now - plant.born
+  if (age < SEED_MS) {
+    return { phase: 'seed', grow: age / SEED_MS, restT: 0, wiltT: 0 }
+  }
+  if (age < SEED_MS + BLOOM_MS) {
+    return { phase: 'bloom', grow: 1, restT: 0, wiltT: 0 }
+  }
+  const restT = clamp((age - SEED_MS - BLOOM_MS) / REST_EASE_MS, 0, 1)
+  return { phase: 'rest', grow: 1, restT, wiltT: 0 }
+}
+
+function neighborCount(occ: Set<string>, col: number, row: number): number {
+  let n = 0
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      if (dx === 0 && dy === 0) continue
+      if (occ.has(`${col + dx},${row + dy}`)) n++
     }
   }
+  return n
 }
 
 function clamp(n: number, min: number, max: number): number {

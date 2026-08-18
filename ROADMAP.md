@@ -53,13 +53,14 @@ A pixel meadow that *feels* like synesthesia: several qualities of sound (pitch,
 
 | Work | Intent |
 | --- | --- |
+| Full-page meadow | Larger logical bed (~320×200); canvas fills leftover viewport; Listen, Stop, Clear garden + pitch meter on a top bar |
 | Organic placement | Cluster same-pitch blooms; more jitter; grass fills gaps instead of taking the next slot |
 | Lifecycle | Seed → bloom → rest; wilt or fade oldest plants instead of hard-delete at 480 |
 | Time-of-day sky | Sky / mist shift with how long the session has been listening |
 
-**Done when:** A few minutes of voice or a song looks like a meadow, not rows. Clearing is still instant.
+**Done when:** The garden is the largest thing on the page. A few minutes of voice or a song looks like a meadow, not rows. Clearing is still instant.
 
-**Touches:** `src/garden/world.ts`, `src/garden/renderer.ts`, maybe `src/garden/palette.ts`
+**Touches:** `src/garden/world.ts`, `src/garden/renderer.ts`, maybe `src/garden/palette.ts`, `src/main.ts`, `src/style.css`
 
 ---
 

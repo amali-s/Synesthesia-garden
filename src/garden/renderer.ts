@@ -1,6 +1,6 @@
-import { PASTEL } from './palette'
+import { PASTEL, skyForListenMs } from './palette'
 import { drawFlower, drawGrass } from './sprites'
-import type { Garden } from './world'
+import { plantLife, type Garden } from './world'
 
 export type RendererOptions = {
   /** Screen pixels per logical pixel */
@@ -47,22 +47,19 @@ export class GardenRenderer {
   draw(garden: Garden, now: number, livePitchT: number | null): void {
     const { ctx, scale, logicalW, logicalH, soilY } = this
     const sway = now / 700
+    const sky = skyForListenMs(garden.listenMs)
 
-    // Sky gradient (soft pastel)
-    const sky = ctx.createLinearGradient(0, 0, 0, soilY * scale)
-    sky.addColorStop(0, PASTEL.skyTop)
-    sky.addColorStop(1, PASTEL.skyBottom)
-    ctx.fillStyle = sky
+    const skyGrad = ctx.createLinearGradient(0, 0, 0, soilY * scale)
+    skyGrad.addColorStop(0, sky.top)
+    skyGrad.addColorStop(1, sky.bottom)
+    ctx.fillStyle = skyGrad
     ctx.fillRect(0, 0, logicalW * scale, soilY * scale)
 
-    // Soft mist clouds (blocky)
-    this.drawClouds(sway)
+    this.drawClouds(sway, sky.mist)
 
-    // Soil
     ctx.fillStyle = PASTEL.soil
     ctx.fillRect(0, soilY * scale, logicalW * scale, (logicalH - soilY) * scale)
 
-    // Soil texture — finer speckles on denser grid
     for (let y = soilY; y < logicalH; y++) {
       for (let x = 0; x < logicalW; x++) {
         const n = (x * 13 + y * 7) % 17
@@ -76,7 +73,6 @@ export class GardenRenderer {
       }
     }
 
-    // Horizon grass fringe
     for (let x = 0; x < logicalW; x++) {
       const h = 1 + ((x * 5) % 4)
       for (let i = 0; i < h; i++) {
@@ -85,16 +81,23 @@ export class GardenRenderer {
       }
     }
 
-    // Plants back-to-front by y
     const sorted = [...garden.plants].sort((a, b) => a.y - b.y)
     const onsetPulse =
-      garden.lastOnset > 0
-        ? Math.max(0, 1 - (now - garden.lastOnset) / 200)
-        : 0
+      garden.lastOnset > 0 ? Math.max(0, 1 - (now - garden.lastOnset) / 200) : 0
     for (const plant of sorted) {
+      const life = plantLife(plant, now)
       const age = (now - plant.born) / 1000
       if (plant.type === 'grass') {
-        drawGrass(ctx, plant.x, plant.y, scale, plant.variant, sway + plant.variant)
+        drawGrass(
+          ctx,
+          plant.x,
+          plant.y,
+          scale,
+          plant.variant,
+          sway + plant.variant,
+          life.grow,
+          life.wiltT,
+        )
       } else {
         drawFlower(
           ctx,
@@ -108,11 +111,12 @@ export class GardenRenderer {
           plant.loudnessT,
           plant.timbreT,
           onsetPulse,
+          life.restT,
+          life.wiltT,
         )
       }
     }
 
-    // Live pitch bloom preview
     if (livePitchT !== null) {
       const pulse = 0.5 + 0.5 * Math.sin(now / 120)
       const size = 2 + Math.round(pulse * 2)
@@ -123,22 +127,25 @@ export class GardenRenderer {
     }
   }
 
-  private drawClouds(sway: number): void {
-    const { ctx, scale } = this
+  private drawClouds(sway: number, mist: string): void {
+    const { ctx, scale, logicalW } = this
     const clouds = [
-      { x: 18, y: 10, w: 28 },
-      { x: 90, y: 16, w: 36 },
-      { x: 170, y: 8, w: 24 },
+      { x: 22, y: 12, w: 32 },
+      { x: 108, y: 18, w: 40 },
+      { x: 198, y: 9, w: 28 },
+      { x: 268, y: 16, w: 34 },
     ]
-    ctx.fillStyle = PASTEL.mist
+    ctx.fillStyle = mist
     for (const c of clouds) {
-      const drift = Math.round(Math.sin(sway * 0.3 + c.x) * 3)
+      const drift = Math.round(Math.sin(sway * 0.3 + c.x) * 4)
+      const x0 = ((c.x + drift) % logicalW + logicalW) % logicalW
       for (let i = 0; i < c.w; i++) {
         const bump = i > 3 && i < c.w - 3 ? 1 + (i % 5 === 0 ? 1 : 0) : 0
-        ctx.fillRect((c.x + i + drift) * scale, (c.y - bump) * scale, scale, scale)
-        ctx.fillRect((c.x + i + drift) * scale, c.y * scale, scale, scale)
+        const x = (x0 + i) % logicalW
+        ctx.fillRect(x * scale, (c.y - bump) * scale, scale, scale)
+        ctx.fillRect(x * scale, c.y * scale, scale, scale)
         if (bump > 0) {
-          ctx.fillRect((c.x + i + drift) * scale, (c.y + 1) * scale, scale, scale)
+          ctx.fillRect(x * scale, (c.y + 1) * scale, scale, scale)
         }
       }
     }

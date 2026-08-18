@@ -2,9 +2,9 @@
 
 Living snapshot of Synesthesia Garden. Update this file at the start of a session (if the repo moved) and at the end of any phase or sizable change.
 
-**Last reviewed:** 2026-08-15  
-**Active phase:** none (Phase 1 done)  
-**Next recommended work:** [Phase 2 — Local song playback](./ROADMAP.md#phase-2--local-song-playback)
+**Last reviewed:** 2026-08-18  
+**Active phase:** none (Phase 3 done)  
+**Next recommended work:** [Phase 4 — Keep what grew](./ROADMAP.md#phase-4--keep-what-grew)
 
 Plan and acceptance criteria: [`ROADMAP.md`](./ROADMAP.md)
 
@@ -14,7 +14,7 @@ Plan and acceptance criteria: [`ROADMAP.md`](./ROADMAP.md)
 
 A pixel-art meadow that grows from **voice**: pitch, loudness, timbre, and rhythm become kind, hue, size, and motion. Microphone in, autocorrelation pitch detector, flowers from voice, grass from quiet. Art Nouveau frame and palette (Mucha / Tiffany jewel tones).
 
-Shipped loop: **Listen → speak/hum → flowers; pause → grass; Clear garden.**
+Shipped loop: **Listen → speak/hum → flowers; pause → grass in gaps; Stop; Clear garden.**
 
 ---
 
@@ -22,12 +22,16 @@ Shipped loop: **Listen → speak/hum → flowers; pause → grass; Clear garden.
 
 | Area | Status |
 | --- | --- |
-| Mic pitch garden | **Shipped** — Listen / Pause / Clear |
+| Mic pitch garden | **Shipped** — Listen / Stop / Clear |
 | Pitch → kind + hue | **Shipped** — log2 80–1000 Hz |
 | Loudness → stem + bloom | **Shipped** — log RMS, AGC off |
 | Timbre → kind nudge + contrast | **Shipped** — spectral centroid |
 | Rhythm → sway / petal-open | **Shipped** — garden-level onset pulse |
-| Silence → grass | **Shipped** |
+| Silence → grass | **Shipped** — grass fills empty cells |
+| Full-page meadow | **Shipped** — 320×200 logical, canvas fills leftover viewport |
+| Organic placement | **Shipped** — same-pitch clusters + jitter |
+| Lifecycle | **Shipped** — seed → bloom → rest; oldest wilt instead of splice |
+| Listen-time sky | **Shipped** — sky/mist shift over ~9 min of listening |
 | Local file / song playback | **Built, unhooked** — `SongPlayer` + CSS, not in `main.ts` |
 | Spotify previews | **Hidden** — API + Vite plugin exist; UI gone |
 | Qobuz streaming | **Hidden / deferred** — API + Vite plugin exist; UI gone |
@@ -39,12 +43,12 @@ Shipped loop: **Listen → speak/hum → flowers; pause → grass; Clear garden.
 
 ## What works in the running app
 
-UI in `src/main.ts` is mic-only:
+UI in `src/main.ts` is mic-only, full-page meadow:
 
-- **Listen / Pause** — `getUserMedia`, echo cancellation / noise suppression on, **AGC off**
-- **HUD** — Pitch (Hz + log fill), Loudness, Timbre
-- **Clear garden** — resets plants, spawn cursor, and last onset
-- **Pixel garden** — 240×160 logical, integer scale 2–3, seven flower kinds, swaying grass, blocky clouds, Nouveau window chrome
+- **Top bar** — Listen, Stop, Clear garden, pitch meter
+- **Listen / Stop** — `getUserMedia`, echo cancellation / noise suppression on, **AGC off**
+- **Clear garden** — instant reset of plants (listen-time sky keeps going)
+- **Pixel garden** — 320×200 logical, integer scale to leftover viewport, seven flower kinds, swaying grass, blocky clouds, Nouveau window chrome
 
 Pitch pipeline (`src/audio/pitch.ts`):
 
@@ -61,9 +65,10 @@ Garden (`src/garden/world.ts`):
 - Kind: `round(pitchT * 6 + (timbreT - 0.5) * 2.5)` clamped 0–6
 - Stem ~5–14 logical px × grow envelope; quiet = compact bloom, loud = full petals
 - Bright timbre raises petal contrast; onsets add ~200 ms extra sway + petal-open
-- Grass after ~360 ms accumulated pause
-- Placement is a **left-to-right cell grid** with light jitter, then wrap
-- Cap 480 plants; oldest spliced off (no wilt)
+- Grass after ~360 ms accumulated pause, using **real frame delta**
+- Placement: same-pitch blooms cluster with jitter; grass prefers empty neighbor cells
+- Cap ~560 living plants; oldest **wilt/fade** (~2.6 s) instead of hard splice
+- Lifecycle: seed (~0.8 s) → bloom (~12 s) → rest (droop) → wilt when over cap
 
 Manual checks (2026-08-15): sung scale walks all 7 kinds; low vs high → different kinds/hues; quiet vs belt at one pitch → stem/bloom only; oo vs ee at one pitch → kind + contrast; staccato refreshes onset, drone does not; silence → grass.
 
@@ -99,10 +104,7 @@ Done. Leftover: `plant.baseHue` is still unused by `drawFlower` (it uses `baseHu
 
 ### Phase 3 — Garden feel
 
-- Grid fill reads mechanical after ~30s
-- `pauseAccum += 16` assumes ~60 fps, not real frame delta
-- No seed/bloom/wilt; trim is a hard splice
-- Sky is static
+Done. Leftover: soil speckles still redraw every frame (Phase 5); loudness/timbre meters left the HUD when the top bar took pitch only.
 
 ### Phase 4 — Keep
 
@@ -110,13 +112,13 @@ Done. Leftover: `plant.baseHue` is still unused by `drawFlower` (it uses `baseHu
 
 ### Phase 5 — Perf
 
-- Soil speckles: per-pixel `fillRect` every frame (~240 × 90)
+- Soil speckles: per-pixel `fillRect` every frame (~320 × 112)
 - Plants copy-sorted by `y` every frame
 - Naive autocorrelation on fftSize 2048 every frame
 
 ### Phase 6 — Teach / a11y
 
-- HUD shows pitch / loudness / timbre bars, but no legend or note name
+- HUD shows pitch only; no legend or note name
 - Listen has no `aria-pressed`; no keyboard shortcuts
 - No `prefers-reduced-motion`
 - Google Fonts CDN in `src/style.css`
@@ -124,7 +126,7 @@ Done. Leftover: `plant.baseHue` is still unused by `drawFlower` (it uses `baseHu
 ### Phase 7 — Hygiene
 
 - `tsconfig.json` `include` is `["src"]` — `api/` and Vite plugins are not in `npm run build` typecheck
-- README is accurate for the **voice** garden; it does not mention this tracker or the hidden stack
+- README still describes the old centered layout, not the full-page meadow
 - `vite.config.ts` comment (“Spotify is active now”) disagrees with README and `.env.example`
 
 ---
@@ -135,7 +137,7 @@ Done. Leftover: `plant.baseHue` is still unused by `drawFlower` (it uses `baseHu
 | --- | --- | --- |
 | 1 | Richer audio mapping | Done |
 | 2 | Local song playback | Code present, UI unhooked |
-| 3 | Organic garden + lifecycle | Not started |
+| 3 | Organic garden + lifecycle | Done |
 | 4 | Keep what grew (PNG / share) | Not started |
 | 5 | Canvas + pitch performance | Not started |
 | 6 | Teach the mapping + a11y | Not started |
@@ -147,15 +149,15 @@ Done. Leftover: `plant.baseHue` is still unused by `drawFlower` (it uses `baseHu
 ## Layout (as of last review)
 
 ```
-src/main.ts                 UI + rAF loop (mic only)
+src/main.ts                 UI + rAF loop (mic only; top bar + meadow)
 src/audio/pitch.ts          Detector + log pitch / loudness / timbre / onset
 src/audio/songPlayer.ts     Unused by UI
 src/audio/spotifyUrl.ts     Unused by UI
 src/audio/qobuzUrl.ts       Unused by UI
-src/garden/world.ts         Spawn rules + lastOnset
-src/garden/renderer.ts      Full-scene draw each frame
-src/garden/sprites.ts       Pixel flowers / grass (loudness + timbre + pulse)
-src/garden/palette.ts       Nouveau colors + pitch hue + timbre sat
+src/garden/world.ts         Clusters, gap grass, seed/bloom/rest/wilt
+src/garden/renderer.ts      Full-scene draw; listen-time sky
+src/garden/sprites.ts       Pixel flowers / grass (life + wilt)
+src/garden/palette.ts       Nouveau colors + pitch hue + sky watch
 api/                        Vercel functions (hidden features)
 vite-plugin-*-api.ts        Dev stubs for those APIs
 ```

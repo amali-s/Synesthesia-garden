@@ -39,11 +39,13 @@
 html,
 body {
   margin: 0;
-  min-height: 100%;
+  height: 100%;
 }
 
 body {
   min-height: 100svh;
+  height: 100svh;
+  overflow: hidden;
   background:
     radial-gradient(ellipse 70% 45% at 50% -8%, #c5d9d0 0%, transparent 55%),
     radial-gradient(ellipse 55% 40% at 92% 78%, #dcc4d0 0%, transparent 50%),
@@ -53,65 +55,73 @@ body {
 
 #app {
   min-height: 100svh;
-  display: grid;
-  place-items: center;
-  padding: 1.5rem 1rem 2rem;
+  height: 100svh;
+  display: flex;
+  padding: 0;
 }
 
 .shell {
-  width: min(100%, 820px);
+  width: 100%;
+  height: 100%;
+  max-width: none;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 1.1rem;
+  align-items: stretch;
+  gap: 0;
 }
 
-.brand {
-  text-align: center;
-  animation: rise 0.9s ease-out both;
+.top-bar {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem 1rem;
+  padding: 0.45rem 0.85rem 0.5rem;
+  background: color-mix(in srgb, var(--cream) 88%, transparent);
+  border-bottom: 2px solid color-mix(in srgb, var(--gold-deep) 32%, transparent);
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--gold) 28%, transparent);
+  z-index: 5;
 }
 
 .logo {
   margin: 0;
   font-family: 'Cormorant Garamond', 'Pixelify Sans', serif;
   font-weight: 600;
-  font-size: clamp(2.15rem, 6.5vw, 3.35rem);
+  font-size: clamp(1.15rem, 2.6vw, 1.65rem);
   letter-spacing: 0.04em;
   color: var(--ink);
   text-shadow: 1px 1px 0 color-mix(in srgb, var(--gold) 45%, white);
+  white-space: nowrap;
 }
 
-.tagline {
-  margin: 0.4rem 0 0;
-  font-family: 'Cormorant Garamond', serif;
-  font-style: italic;
-  font-size: 1.15rem;
-  color: var(--ink-soft);
-  max-width: 28rem;
-}
-
-.stage {
+.meadow {
   position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
   width: 100%;
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  animation: rise 1s 0.1s ease-out both;
+  align-items: stretch;
+  justify-content: stretch;
+  padding: 0.4rem 0.5rem 0.5rem;
 }
 
 /* —— Art Nouveau window frame —— */
 .window-frame {
-  --frame-pad: 18px;
+  --frame-pad: 12px;
   position: relative;
-  display: inline-block;
-  max-width: 100%;
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  max-width: none;
   padding: var(--frame-pad);
   background:
     linear-gradient(145deg, var(--frame-highlight) 0%, var(--frame-inner) 28%, var(--frame-mid) 62%, var(--frame-outer) 100%);
-  border-radius: 28% 28% 18% 18% / 14% 14% 10% 10%;
+  border-radius: 18px 18px 14px 14px;
   box-shadow:
     0 0 0 2px color-mix(in srgb, var(--frame-outer) 80%, black),
-    8px 12px 0 var(--shadow),
+    6px 8px 0 var(--shadow),
     inset 0 1px 0 color-mix(in srgb, var(--frame-highlight) 70%, white),
     inset 0 -2px 6px color-mix(in srgb, var(--frame-outer) 35%, transparent);
 }
@@ -119,8 +129,8 @@ body {
 .window-frame::before {
   content: '';
   position: absolute;
-  inset: 7px;
-  border-radius: 26% 26% 16% 16% / 12% 12% 8% 8%;
+  inset: 6px;
+  border-radius: 14px;
   border: 2px solid color-mix(in srgb, var(--frame-outer) 55%, transparent);
   box-shadow:
     inset 0 0 0 1px color-mix(in srgb, var(--frame-highlight) 50%, transparent),
@@ -132,8 +142,8 @@ body {
 .window-frame::after {
   content: '';
   position: absolute;
-  inset: 11px;
-  border-radius: 24% 24% 14% 14% / 10% 10% 7% 7%;
+  inset: 9px;
+  border-radius: 12px;
   border: 1px solid color-mix(in srgb, var(--gold) 55%, transparent);
   pointer-events: none;
   z-index: 2;
@@ -142,7 +152,13 @@ body {
 .window-frame__glass {
   position: relative;
   z-index: 1;
-  border-radius: 22% 22% 12% 12% / 9% 9% 6% 6%;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
   overflow: hidden;
   background: var(--sky);
   box-shadow:
@@ -269,13 +285,19 @@ body {
 .meter {
   display: flex;
   align-items: center;
-  gap: 0.55rem;
+  gap: 0.45rem;
   min-width: 0;
+}
+
+.pitch-meter {
+  flex: 1 1 12rem;
+  max-width: 22rem;
+  min-width: 10rem;
 }
 
 .meter-label,
 .meter-value {
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--ink-soft);
@@ -283,11 +305,11 @@ body {
 }
 
 .meter-label {
-  min-width: 5.6rem;
+  min-width: 3.2rem;
 }
 
 .meter-value {
-  min-width: 4.5rem;
+  min-width: 3.8rem;
   text-align: right;
   font-variant-numeric: tabular-nums;
   color: var(--ink);
@@ -309,30 +331,31 @@ body {
 }
 
 .status {
-  font-size: 0.9rem;
-  color: var(--ink);
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+  flex: 1 1 10rem;
+  min-width: 8rem;
 }
 
 .controls {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.65rem;
-  justify-content: center;
-  animation: rise 1.05s 0.18s ease-out both;
+  gap: 0.4rem;
+  justify-content: flex-start;
 }
 
 .btn {
   font-family: 'Cormorant Garamond', 'Pixelify Sans', serif;
-  font-size: 1.15rem;
+  font-size: 1rem;
   font-weight: 600;
   letter-spacing: 0.03em;
-  padding: 0.5rem 1.3rem;
+  padding: 0.28rem 0.95rem;
   border: 2px solid var(--gold-deep);
   background: var(--cream);
   color: var(--ink);
   cursor: pointer;
   border-radius: 999px 12px 999px 12px;
-  box-shadow: 3px 3px 0 var(--shadow);
+  box-shadow: 2px 2px 0 var(--shadow);
   transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.15s ease;
 }
 
@@ -356,8 +379,99 @@ body {
 }
 
 .btn:disabled {
-  opacity: 0.55;
-  cursor: wait;
+  opacity: 0.5;
+  cursor: default;
+}
+
+.file-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.song-form {
+  width: min(100%, 520px);
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  animation: rise 1.08s 0.2s ease-out both;
+}
+
+.song-label {
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  font-weight: 500;
+}
+
+.song-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.song-input {
+  flex: 1;
+  min-width: 12rem;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.95rem;
+  padding: 0.55rem 0.85rem;
+  border: 2px solid color-mix(in srgb, var(--gold-deep) 40%, transparent);
+  border-radius: 4px 14px 4px 14px;
+  background: color-mix(in srgb, var(--cream) 92%, white);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gold) 22%, transparent);
+}
+
+.song-input::placeholder {
+  color: color-mix(in srgb, var(--ink-soft) 70%, transparent);
+}
+
+.song-input:focus {
+  outline: none;
+  border-color: var(--teal);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--teal) 25%, transparent),
+    0 0 0 3px color-mix(in srgb, var(--teal) 18%, transparent);
+}
+
+.playback {
+  width: min(100%, 520px);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.55rem 0.75rem;
+  background: var(--panel);
+  border: 2px solid color-mix(in srgb, var(--gold-deep) 30%, transparent);
+  border-radius: 4px 16px 4px 16px;
+  animation: rise 0.5s ease-out both;
+}
+
+.playback-track {
+  flex: 1;
+  min-width: 8rem;
+  height: 8px;
+  background: color-mix(in srgb, var(--ink) 8%, white);
+  border: 2px solid color-mix(in srgb, var(--gold-deep) 24%, transparent);
+  overflow: hidden;
+}
+
+.playback-fill {
+  height: 100%;
+  width: 0%;
+  background: color-mix(in srgb, var(--teal) 55%, var(--leaf));
+  transition: width 0.1s linear;
+}
+
+.playback-time {
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-soft);
+  min-width: 6.5rem;
+  text-align: right;
 }
 
 .hint {
@@ -380,10 +494,10 @@ body {
   }
 }
 
-@media (max-width: 520px) {
+@media (max-width: 720px) {
   .window-frame {
-    --frame-pad: 12px;
-    border-radius: 22% 22% 14% 14% / 12% 12% 8% 8%;
+    --frame-pad: 8px;
+    border-radius: 12px;
   }
 
   .window-frame__ornament {
@@ -391,9 +505,17 @@ body {
     height: 28px;
   }
 
-  .hud {
-    flex-direction: column;
-    align-items: stretch;
+  .top-bar {
+    padding: 0.4rem 0.55rem;
+  }
+
+  .pitch-meter {
+    flex-basis: 100%;
+    max-width: none;
+  }
+
+  .status {
+    flex-basis: 100%;
   }
 
   .meter-value {
