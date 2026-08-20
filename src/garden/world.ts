@@ -107,7 +107,8 @@ export class Garden {
     if (sample.isVoice && sample.hz !== null) {
       this.lastVoice = now
       this.pauseAccum = 0
-      if (now - this.lastSpawn >= SPAWN_COOLDOWN_MS) {
+      const cooldown = spawnCooldownMs(sample.spawnScale)
+      if (now - this.lastSpawn >= cooldown) {
         this.spawnFlower(sample, now)
         this.lastSpawn = now
       }
@@ -169,9 +170,15 @@ export class Garden {
     }
   }
 
-  /** Place near same-pitch blooms; otherwise open a new cluster with jitter. */
-  private placeFlower(pitchT: number): { x: number; y: number } {
+  /** Place near same-pitch blooms; duration + pan bias x, section energy biases depth. */
+  private placeFlower(
+    pitchT: number,
+    durationT: number,
+    panT: number,
+    energyT: number,
+  ): { x: number; y: number } {
     const occ = this.occupied()
+    const target = this.layoutTarget(durationT, panT, energyT)
     const kin = this.plants.filter(
       (p): p is Extract<Plant, { type: 'flower' }> =>
         p.type === 'flower' &&
@@ -187,32 +194,49 @@ export class Garden {
 
     if (kin.length > 0) {
       const anchor = kin[Math.floor(Math.random() * kin.length)]!
+      const pull = 0.3
+      const ax = anchor.x * (1 - pull) + target.x * pull
+      const ay = anchor.y * (1 - pull) + target.y * pull
       for (let n = 0; n < 14; n++) {
         const ang = Math.random() * Math.PI * 2
         const dist = 5 + Math.random() * CLUSTER_RADIUS
         const hit = tryPos(
-          anchor.x + Math.cos(ang) * dist + (Math.random() * 10 - 5),
-          anchor.y + Math.sin(ang) * dist * 0.55 + (Math.random() * 8 - 4),
+          ax + Math.cos(ang) * dist + (Math.random() * 10 - 5),
+          ay + Math.sin(ang) * dist * 0.55 + (Math.random() * 8 - 4),
         )
         if (hit) return hit
       }
     }
 
-    const b = this.soilBounds()
+    const yJitter = (1 - energyT * 0.55) * 22
     for (let n = 0; n < 16; n++) {
-      const x =
-        b.x0 +
-        (b.x1 - b.x0) * (0.12 + pitchT * 0.76) +
-        (Math.random() * 48 - 24)
-      const y = b.y0 + Math.random() * (b.y1 - b.y0)
-      const hit = tryPos(x, y)
+      const hit = tryPos(
+        target.x + (Math.random() * 36 - 18),
+        target.y + (Math.random() * 2 - 1) * yJitter,
+      )
       if (hit) return hit
     }
 
+    const b = this.soilBounds()
     return this.clampPos(
       b.x0 + Math.random() * (b.x1 - b.x0),
       b.y0 + Math.random() * (b.y1 - b.y0),
     )
+  }
+
+  /** Short/staccato left, long right; pan left/right; quiet front, loud back. */
+  private layoutTarget(
+    durationT: number,
+    panT: number,
+    energyT: number,
+  ): { x: number; y: number } {
+    const b = this.soilBounds()
+    const xT = clamp(0.5 + (durationT - 0.5) * 0.36 + (panT - 0.5) * 0.44, 0.07, 0.93)
+    const yT = 0.8 - energyT * 0.62
+    return {
+      x: b.x0 + (b.x1 - b.x0) * xT,
+      y: b.y0 + (b.y1 - b.y0) * yT,
+    }
   }
 
   /** Grass occupies empty cells, preferring gaps beside existing plants. */
@@ -251,7 +275,12 @@ export class Garden {
     const pitchT = pitchNorm(hz)
     const kind = kindFromPitch(pitchT, sample.timbreT)
     const hueIndex = Math.floor(pitchT * FLOWER_BASE_HUES.length) % FLOWER_BASE_HUES.length
-    const { x, y } = this.placeFlower(pitchT)
+    const { x, y } = this.placeFlower(
+      pitchT,
+      durationTFromMs(sample.durationMs),
+      sample.panT,
+      sample.sectionEnergyT,
+    )
     this.plants.push({
       type: 'flower',
       x,
@@ -303,6 +332,14 @@ export function plantLife(plant: Plant, now: number): PlantLifeState {
   }
   const restT = clamp((age - SEED_MS - BLOOM_MS) / REST_EASE_MS, 0, 1)
   return { phase: 'rest', grow: 1, restT, wiltT: 0 }
+}
+
+function spawnCooldownMs(spawnScale: number): number {
+  return clamp(Math.round(SPAWN_COOLDOWN_MS * spawnScale), 105, 480)
+}
+
+function durationTFromMs(ms: number): number {
+  return clamp((ms - 60) / 1400, 0, 1)
 }
 
 function neighborCount(occ: Set<string>, col: number, row: number): number {

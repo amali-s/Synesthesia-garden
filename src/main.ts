@@ -98,7 +98,7 @@ function idleStatus(): string {
 
 function listeningStatus(): string {
   return listenMode === 'music'
-    ? 'Following the mix'
+    ? 'Following the mix · drums sway, notes plant'
     : 'Listening — speak or hum'
 }
 
@@ -236,7 +236,11 @@ function frame(now: number): void {
     } else {
       livePitchT = null
       updateHud(null, false)
-      if (sample.rms < detector.silenceThreshold) {
+      if (sample.percussive) {
+        setStatus(
+          listenMode === 'music' ? 'Beat · the bed is swaying' : listeningStatus(),
+        )
+      } else if (sample.rms < detector.silenceThreshold) {
         setStatus(
           listenMode === 'music'
             ? 'Quiet in the mix · grass is filling the gaps'

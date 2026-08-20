@@ -97,6 +97,7 @@ export class GardenRenderer {
           sway + plant.variant,
           life.grow,
           life.wiltT,
+          onsetPulse,
         )
       } else {
         drawFlower(
