@@ -1,4 +1,10 @@
-@import url('https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&display=swap');
+@font-face {
+  font-family: 'VCR OSD Mono';
+  src: url('./fonts/VCR_OSD_MONO.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
 
 :root {
   --ink: #2e2a24;
@@ -15,7 +21,8 @@
   --mauve: #9b7b9e;
   --panel: #eadfcb;
   --shadow: #2e2a24;
-  font-family: 'Pixelify Sans', monospace;
+  --font: 'VCR OSD Mono', ui-monospace, monospace;
+  font-family: var(--font);
   color: var(--ink);
   background: var(--patina);
   line-height: 1.35;
@@ -74,7 +81,7 @@ body {
 
 .logo {
   margin: 0;
-  font-family: 'Pixelify Sans', monospace;
+  font-family: var(--font);
   font-weight: 700;
   font-size: clamp(1.05rem, 2.4vw, 1.45rem);
   letter-spacing: 0.02em;
@@ -95,9 +102,12 @@ body {
   background: var(--patina);
 }
 
-/* Pixel twisted-brass frame */
+/* Two ropes twisted together */
 .window-frame {
   --frame-pad: 20px;
+  --frame-dark: #9c6b6a;
+  --frame-mid: #e7b9b1;
+  --frame-light: #f5efe6;
   position: relative;
   flex: 1 1 auto;
   width: 100%;
@@ -105,44 +115,23 @@ body {
   min-height: 0;
   display: flex;
   max-width: none;
-  padding: var(--frame-pad);
+  padding: 0;
+  border: var(--frame-pad) solid var(--frame-dark);
+  border-image-source: url('./rope-frame.svg');
+  border-image-slice: 20;
+  border-image-width: var(--frame-pad);
+  border-image-repeat: round;
   border-radius: 0;
-  background: var(--ink);
-  box-shadow: 4px 4px 0 var(--ink);
-}
-
-.window-frame::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  padding: 20px;
-  pointer-events: none;
-  z-index: 2;
-  background: repeating-linear-gradient(
-    135deg,
-    var(--brass-lite) 0 3px,
-    #e8d9a8 3px 5px,
-    var(--patina) 5px 8px,
-    var(--brass) 8px 11px,
-    var(--ink) 11px 13px,
-    var(--brass-lite) 13px 16px
-  );
-  mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  mask-composite: exclude;
-  -webkit-mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
+  background: var(--frame-dark);
+  box-shadow: 4px 4px 0 var(--frame-dark);
 }
 
 .window-frame::after {
   content: '';
   position: absolute;
-  inset: 20px;
-  border: 2px solid var(--ink);
-  box-shadow: inset 0 0 0 2px var(--brass-lite);
+  inset: 0;
+  border: 2px solid var(--frame-dark);
+  box-shadow: inset 0 0 0 2px var(--frame-light);
   pointer-events: none;
   z-index: 2;
 }
@@ -207,7 +196,7 @@ body {
 
 .meter-label,
 .meter-value {
-  font-family: 'Pixelify Sans', monospace;
+  font-family: var(--font);
   font-size: 0.78rem;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -244,7 +233,7 @@ body {
 }
 
 .status {
-  font-family: 'Pixelify Sans', monospace;
+  font-family: var(--font);
   font-size: 0.78rem;
   color: var(--ink-soft);
   flex: 1 1 10rem;
@@ -272,7 +261,7 @@ body {
 }
 
 .mode-btn {
-  font-family: 'Pixelify Sans', monospace;
+  font-family: var(--font);
   font-size: 0.88rem;
   font-weight: 700;
   letter-spacing: 0.02em;
@@ -306,7 +295,7 @@ body {
 }
 
 .btn {
-  font-family: 'Pixelify Sans', monospace;
+  font-family: var(--font);
   font-size: 0.95rem;
   font-weight: 700;
   letter-spacing: 0.02em;
@@ -382,7 +371,7 @@ body {
 .song-input {
   flex: 1;
   min-width: 12rem;
-  font-family: 'DM Sans', sans-serif;
+  font-family: var(--font);
   font-size: 0.95rem;
   padding: 0.55rem 0.85rem;
   border: 2px solid color-mix(in srgb, var(--gold-deep) 40%, transparent);
