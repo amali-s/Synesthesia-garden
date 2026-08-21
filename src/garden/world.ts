@@ -1,4 +1,14 @@
 import { pitchNorm, type PitchSample } from '../audio/pitch'
+import {
+  GARDEN_BEDS,
+  bedById,
+  bedCols,
+  bedFromPitch,
+  bedRows,
+  soilRect,
+  type BedId,
+  type GardenBed,
+} from './beds'
 import { FLOWER_BASE_HUES } from './palette'
 import { kindFromPitch, type FlowerKind } from './sprites'
 
@@ -9,6 +19,7 @@ export type Plant =
       type: 'flower'
       x: number
       y: number
+      bedId: BedId
       kind: FlowerKind
       pitchT: number
       loudnessT: number
@@ -22,18 +33,15 @@ export type Plant =
       type: 'grass'
       x: number
       y: number
+      bedId: BedId
       variant: number
       born: number
       wiltStarted: number | null
     }
 
 export type GardenConfig = {
-  /** Logical pixel width of the garden bed */
   width: number
-  /** Logical pixel height of the garden bed */
   height: number
-  /** Soil band starts at this y (logical) */
-  soilY: number
 }
 
 const SPAWN_COOLDOWN_MS = 220
@@ -62,13 +70,11 @@ export class Garden {
   private pauseAccum = 0
   private lastTick = 0
   private frameDt = 16
-  private cols: number
-  private rows: number
+  private lastBedId: BedId = 'bl'
+  private grassBedCursor = 0
 
   constructor(config: GardenConfig) {
     this.config = config
-    this.cols = Math.floor(config.width / CELL_W)
-    this.rows = Math.max(1, Math.floor((config.height - config.soilY - 4) / CELL_H))
   }
 
   clear(): void {
@@ -138,57 +144,52 @@ export class Garden {
     }
   }
 
-  private soilBounds(): { x0: number; x1: number; y0: number; y1: number } {
-    return {
-      x0: 6,
-      x1: this.config.width - 6,
-      y0: this.config.soilY + 8,
-      y1: this.config.height - 5,
-    }
-  }
-
   private occupied(): Set<string> {
     const keys = new Set<string>()
     for (const p of this.plants) {
       if (p.wiltStarted !== null) continue
-      keys.add(this.cellKey(p.x, p.y))
+      keys.add(this.cellKey(p.bedId, p.x, p.y))
     }
     return keys
   }
 
-  private cellKey(x: number, y: number): string {
-    const col = Math.round(x / CELL_W)
-    const row = Math.round((y - this.config.soilY) / CELL_H)
-    return `${col},${row}`
+  private cellKey(bedId: BedId, x: number, y: number): string {
+    const bed = bedById(bedId)
+    const r = soilRect(bed)
+    const col = Math.round((x - r.x0) / CELL_W)
+    const row = Math.round((y - r.y0) / CELL_H)
+    return `${bedId}:${col},${row}`
   }
 
-  private clampPos(x: number, y: number): { x: number; y: number } {
-    const b = this.soilBounds()
+  private clampPos(bed: GardenBed, x: number, y: number): { x: number; y: number } {
+    const b = soilRect(bed)
     return {
       x: clamp(x, b.x0, b.x1),
       y: clamp(y, b.y0, b.y1),
     }
   }
 
-  /** Place near same-pitch blooms; duration + pan bias x, section energy biases depth. */
+  /** Place in the pitch's patch; cluster same-pitch blooms; duration + pan + energy bias inside the bed. */
   private placeFlower(
+    bed: GardenBed,
     pitchT: number,
     durationT: number,
     panT: number,
     energyT: number,
   ): { x: number; y: number } {
     const occ = this.occupied()
-    const target = this.layoutTarget(durationT, panT, energyT)
+    const target = this.layoutTarget(bed, durationT, panT, energyT)
     const kin = this.plants.filter(
       (p): p is Extract<Plant, { type: 'flower' }> =>
         p.type === 'flower' &&
+        p.bedId === bed.id &&
         p.wiltStarted === null &&
         Math.abs(p.pitchT - pitchT) < PITCH_KIN,
     )
 
     const tryPos = (x: number, y: number): { x: number; y: number } | null => {
-      const p = this.clampPos(x, y)
-      if (occ.has(this.cellKey(p.x, p.y))) return null
+      const p = this.clampPos(bed, x, y)
+      if (occ.has(this.cellKey(bed.id, p.x, p.y))) return null
       return p
     }
 
@@ -208,57 +209,63 @@ export class Garden {
       }
     }
 
-    const yJitter = (1 - energyT * 0.55) * 22
+    const yJitter = (1 - energyT * 0.55) * 18
     for (let n = 0; n < 16; n++) {
       const hit = tryPos(
-        target.x + (Math.random() * 36 - 18),
+        target.x + (Math.random() * 28 - 14),
         target.y + (Math.random() * 2 - 1) * yJitter,
       )
       if (hit) return hit
     }
 
-    const b = this.soilBounds()
+    const b = soilRect(bed)
     return this.clampPos(
+      bed,
       b.x0 + Math.random() * (b.x1 - b.x0),
       b.y0 + Math.random() * (b.y1 - b.y0),
     )
   }
 
-  /** Short/staccato left, long right; pan left/right; quiet front, loud back. */
+  /** Short/staccato left, long right; pan left/right; quiet front of bed, loud toward back. */
   private layoutTarget(
+    bed: GardenBed,
     durationT: number,
     panT: number,
     energyT: number,
   ): { x: number; y: number } {
-    const b = this.soilBounds()
-    const xT = clamp(0.5 + (durationT - 0.5) * 0.36 + (panT - 0.5) * 0.44, 0.07, 0.93)
-    const yT = 0.8 - energyT * 0.62
+    const b = soilRect(bed)
+    const xT = clamp(0.5 + (durationT - 0.5) * 0.36 + (panT - 0.5) * 0.44, 0.08, 0.92)
+    const yT = 0.78 - energyT * 0.58
     return {
       x: b.x0 + (b.x1 - b.x0) * xT,
       y: b.y0 + (b.y1 - b.y0) * yT,
     }
   }
 
-  /** Grass occupies empty cells, preferring gaps beside existing plants. */
-  private placeGrass(): { x: number; y: number } {
+  /** Grass fills empty cells in a patch, preferring gaps beside existing plants. */
+  private placeGrass(bed: GardenBed): { x: number; y: number } {
     const occ = this.occupied()
-    const b = this.soilBounds()
+    const b = soilRect(bed)
+    const cols = bedCols(bed, CELL_W)
+    const rows = bedRows(bed, CELL_H)
     const gaps: Array<{ x: number; y: number; score: number }> = []
+    const inBed = this.plants.filter((p) => p.bedId === bed.id && p.wiltStarted === null)
 
-    for (let row = 0; row < this.rows; row++) {
-      for (let col = 0; col < this.cols; col++) {
-        const x = 4 + col * CELL_W + (Math.random() * 6 - 3)
-        const y = this.config.soilY + 6 + row * CELL_H + (Math.random() * 5 - 2)
-        const pos = this.clampPos(x, y)
-        if (occ.has(this.cellKey(pos.x, pos.y))) continue
-        const neighbors = neighborCount(occ, col, row)
-        if (neighbors === 0 && this.plants.length > 8) continue
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < cols; col++) {
+        const x = b.x0 + col * CELL_W + (Math.random() * 6 - 3)
+        const y = b.y0 + row * CELL_H + (Math.random() * 5 - 2)
+        const pos = this.clampPos(bed, x, y)
+        if (occ.has(this.cellKey(bed.id, pos.x, pos.y))) continue
+        const neighbors = neighborCount(occ, bed.id, col, row)
+        if (neighbors === 0 && inBed.length > 8) continue
         gaps.push({ ...pos, score: neighbors })
       }
     }
 
     if (gaps.length === 0) {
       return this.clampPos(
+        bed,
         b.x0 + Math.random() * (b.x1 - b.x0),
         b.y0 + Math.random() * (b.y1 - b.y0),
       )
@@ -273,9 +280,12 @@ export class Garden {
   private spawnFlower(sample: PitchSample, now: number): void {
     const hz = sample.hz!
     const pitchT = pitchNorm(hz)
+    const bed = bedFromPitch(pitchT)
+    this.lastBedId = bed.id
     const kind = kindFromPitch(pitchT, sample.timbreT)
     const hueIndex = Math.floor(pitchT * FLOWER_BASE_HUES.length) % FLOWER_BASE_HUES.length
     const { x, y } = this.placeFlower(
+      bed,
       pitchT,
       durationTFromMs(sample.durationMs),
       sample.panT,
@@ -285,6 +295,7 @@ export class Garden {
       type: 'flower',
       x,
       y,
+      bedId: bed.id,
       kind,
       pitchT,
       loudnessT: sample.loudnessT,
@@ -298,11 +309,22 @@ export class Garden {
   }
 
   private spawnGrass(now: number): void {
-    const { x, y } = this.placeGrass()
+    const livingBeds = new Set(
+      this.plants.filter((p) => p.wiltStarted === null).map((p) => p.bedId),
+    )
+    let bed: GardenBed
+    if (livingBeds.size === 0) {
+      bed = GARDEN_BEDS[this.grassBedCursor % GARDEN_BEDS.length]!
+      this.grassBedCursor += 1
+    } else {
+      bed = bedById(this.lastBedId)
+    }
+    const { x, y } = this.placeGrass(bed)
     this.plants.push({
       type: 'grass',
       x,
       y,
+      bedId: bed.id,
       variant: Math.floor(Math.random() * 8),
       born: now,
       wiltStarted: null,
@@ -342,12 +364,17 @@ function durationTFromMs(ms: number): number {
   return clamp((ms - 60) / 1400, 0, 1)
 }
 
-function neighborCount(occ: Set<string>, col: number, row: number): number {
+function neighborCount(
+  occ: Set<string>,
+  bedId: BedId,
+  col: number,
+  row: number,
+): number {
   let n = 0
   for (let dy = -1; dy <= 1; dy++) {
     for (let dx = -1; dx <= 1; dx++) {
       if (dx === 0 && dy === 0) continue
-      if (occ.has(`${col + dx},${row + dy}`)) n++
+      if (occ.has(`${bedId}:${col + dx},${row + dy}`)) n++
     }
   }
   return n

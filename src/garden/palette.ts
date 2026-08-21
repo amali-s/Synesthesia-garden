@@ -1,5 +1,27 @@
-/** Art Nouveau garden palette — Mucha / Tiffany inspired soft jewel tones */
+/**
+ * Chrome / ground only — UI frame, timber, gravel.
+ * Do not use these for flowers or grass (those stay on PASTEL + pitch hues).
+ */
+export const GROUND = {
+  ink: '#2E2A24',
+  brass: '#7A6A55',
+  brassLite: '#C9B38C',
+  cream: '#EADFCB',
+  patina: '#4A6B63',
+  gravel: '#C7B27C',
+  gravelLight: '#f4eee2',
+  gravelDark: '#C9B38C',
+  timber: '#C9B38C',
+  timberDark: '#7A6A55',
+  timberShadow: '#2E2A24',
+  timberLite: '#EADFCB',
+  /** Darker brown than the path around the patches */
+  bedSoil: '#5a3d2b',
+  bedSoilDark: '#3a2418',
+  bedSoilLight: '#7a5640',
+} as const
 
+/** Plant colors — unchanged by the chrome palette */
 export const PASTEL = {
   skyTop: '#b7cfc8',
   skyBottom: '#d9c8d4',

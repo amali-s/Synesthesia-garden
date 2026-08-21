@@ -1,6 +1,7 @@
-import { PASTEL, skyForListenMs } from './palette'
+import { GARDEN_BEDS, bedsBackToFront, type GardenBed } from './beds'
+import { GROUND } from './palette'
 import { drawFlower, drawGrass } from './sprites'
-import { plantLife, type Garden } from './world'
+import { plantLife, type Garden, type Plant } from './world'
 
 export type RendererOptions = {
   /** Screen pixels per logical pixel */
@@ -13,13 +14,11 @@ export class GardenRenderer {
   private scale: number
   private logicalW: number
   private logicalH: number
-  private soilY: number
 
   constructor(
     canvas: HTMLCanvasElement,
     logicalW: number,
     logicalH: number,
-    soilY: number,
     opts: RendererOptions = { scale: 2 },
   ) {
     this.canvas = canvas
@@ -29,8 +28,11 @@ export class GardenRenderer {
     this.scale = opts.scale
     this.logicalW = logicalW
     this.logicalH = logicalH
-    this.soilY = soilY
     this.resize()
+  }
+
+  getScale(): number {
+    return this.scale
   }
 
   setScale(scale: number): void {
@@ -45,109 +47,131 @@ export class GardenRenderer {
   }
 
   draw(garden: Garden, now: number, livePitchT: number | null): void {
-    const { ctx, scale, logicalW, logicalH, soilY } = this
+    const { ctx, scale, logicalW, logicalH } = this
     const sway = now / 700
-    const sky = skyForListenMs(garden.listenMs)
+    this.drawPath(logicalW, logicalH)
 
-    const skyGrad = ctx.createLinearGradient(0, 0, 0, soilY * scale)
-    skyGrad.addColorStop(0, sky.top)
-    skyGrad.addColorStop(1, sky.bottom)
-    ctx.fillStyle = skyGrad
-    ctx.fillRect(0, 0, logicalW * scale, soilY * scale)
-
-    this.drawClouds(sway, sky.mist)
-
-    ctx.fillStyle = PASTEL.soil
-    ctx.fillRect(0, soilY * scale, logicalW * scale, (logicalH - soilY) * scale)
-
-    for (let y = soilY; y < logicalH; y++) {
-      for (let x = 0; x < logicalW; x++) {
-        const n = (x * 13 + y * 7) % 17
-        if (n === 0) {
-          ctx.fillStyle = PASTEL.soilDark
-          ctx.fillRect(x * scale, y * scale, scale, scale)
-        } else if (n === 8) {
-          ctx.fillStyle = PASTEL.soilLight
-          ctx.fillRect(x * scale, y * scale, scale, scale)
-        }
-      }
-    }
-
-    for (let x = 0; x < logicalW; x++) {
-      const h = 1 + ((x * 5) % 4)
-      for (let i = 0; i < h; i++) {
-        ctx.fillStyle = i === 0 ? PASTEL.grassDark : i === h - 1 ? PASTEL.grassLight : PASTEL.grass
-        ctx.fillRect(x * scale, (soilY - 1 - i) * scale, scale, scale)
-      }
-    }
-
-    const sorted = [...garden.plants].sort((a, b) => a.y - b.y)
     const onsetPulse =
       garden.lastOnset > 0 ? Math.max(0, 1 - (now - garden.lastOnset) / 200) : 0
-    for (const plant of sorted) {
-      const life = plantLife(plant, now)
-      const age = (now - plant.born) / 1000
-      if (plant.type === 'grass') {
-        drawGrass(
-          ctx,
-          plant.x,
-          plant.y,
-          scale,
-          plant.variant,
-          sway + plant.variant,
-          life.grow,
-          life.wiltT,
-          onsetPulse,
-        )
-      } else {
-        drawFlower(
-          ctx,
-          plant.x,
-          plant.y,
-          scale,
-          plant.kind,
-          plant.pitchT,
-          age,
-          sway + plant.x * 0.1,
-          plant.loudnessT,
-          plant.timbreT,
-          onsetPulse,
-          life.restT,
-          life.wiltT,
-        )
+
+    for (const bed of bedsBackToFront()) {
+      this.drawBed(bed)
+      const inBed = garden.plants.filter((p) => p.bedId === bed.id)
+      inBed.sort((a, b) => a.y - b.y)
+      for (const plant of inBed) {
+        this.drawPlant(plant, now, sway, onsetPulse)
       }
     }
 
     if (livePitchT !== null) {
       const pulse = 0.5 + 0.5 * Math.sin(now / 120)
       const size = 2 + Math.round(pulse * 2)
-      const cx = logicalW - 14
-      const cy = 14
+      const bed = GARDEN_BEDS.find(
+        (b) => livePitchT >= b.pitch0 && livePitchT < b.pitch1,
+      )
+      const cx = bed ? bed.x + bed.w - 10 : logicalW - 14
+      const cy = bed ? bed.y + 10 : 14
       ctx.fillStyle = `hsl(${(350 + livePitchT * 42) % 360} ${28 + livePitchT * 44}% ${68 - livePitchT * 14}%)`
       ctx.fillRect((cx - size) * scale, (cy - size) * scale, size * 2 * scale, size * 2 * scale)
     }
   }
 
-  private drawClouds(sway: number, mist: string): void {
-    const { ctx, scale, logicalW } = this
-    const clouds = [
-      { x: 22, y: 12, w: 32 },
-      { x: 108, y: 18, w: 40 },
-      { x: 198, y: 9, w: 28 },
-      { x: 268, y: 16, w: 34 },
-    ]
-    ctx.fillStyle = mist
-    for (const c of clouds) {
-      const drift = Math.round(Math.sin(sway * 0.3 + c.x) * 4)
-      const x0 = ((c.x + drift) % logicalW + logicalW) % logicalW
-      for (let i = 0; i < c.w; i++) {
-        const bump = i > 3 && i < c.w - 3 ? 1 + (i % 5 === 0 ? 1 : 0) : 0
-        const x = (x0 + i) % logicalW
-        ctx.fillRect(x * scale, (c.y - bump) * scale, scale, scale)
-        ctx.fillRect(x * scale, c.y * scale, scale, scale)
-        if (bump > 0) {
-          ctx.fillRect(x * scale, (c.y + 1) * scale, scale, scale)
-        }
+  private drawPlant(
+    plant: Plant,
+    now: number,
+    sway: number,
+    onsetPulse: number,
+  ): void {
+    const { ctx, scale } = this
+    const life = plantLife(plant, now)
+    const age = (now - plant.born) / 1000
+    if (plant.type === 'grass') {
+      drawGrass(
+        ctx,
+        plant.x,
+        plant.y,
+        scale,
+        plant.variant,
+        sway + plant.variant,
+        life.grow,
+        life.wiltT,
+        onsetPulse,
+      )
+      return
+    }
+    drawFlower(
+      ctx,
+      plant.x,
+      plant.y,
+      scale,
+      plant.kind,
+      plant.pitchT,
+      age,
+      sway + plant.x * 0.1,
+      plant.loudnessT,
+      plant.timbreT,
+      onsetPulse,
+      life.restT,
+      life.wiltT,
+    )
+  }
+
+  private fillPx(x: number, y: number, color: string): void {
+    const { ctx, scale } = this
+    ctx.fillStyle = color
+    ctx.fillRect(x * scale, y * scale, scale, scale)
+  }
+
+  private fillRect(x: number, y: number, w: number, h: number, color: string): void {
+    const { ctx, scale } = this
+    ctx.fillStyle = color
+    ctx.fillRect(x * scale, y * scale, w * scale, h * scale)
+  }
+
+  private drawPath(logicalW: number, logicalH: number): void {
+    this.fillRect(0, 0, logicalW, logicalH, GROUND.gravel)
+    for (let y = 0; y < logicalH; y++) {
+      for (let x = 0; x < logicalW; x++) {
+        const n = (x * 11 + y * 19) % 23
+        if (n === 0) this.fillPx(x, y, GROUND.gravelDark)
+        else if (n === 7) this.fillPx(x, y, GROUND.gravelLight)
+        else if (n === 14) this.fillPx(x, y, GROUND.patina)
+      }
+    }
+  }
+
+  private drawBed(bed: GardenBed): void {
+    const t = bed.timber
+    const d = bed.depth
+    const ox = bed.x
+    const oy = bed.y
+    const ow = bed.w
+    const oh = bed.h
+
+    this.fillRect(ox + 2, oy + 2, ow, oh, GROUND.timberShadow)
+
+    this.fillRect(ox, oy, ow, oh, GROUND.timberDark)
+    this.fillRect(ox + 1, oy + 1, ow - 2, oh - d - 1, GROUND.timber)
+    this.fillRect(ox, oy, ow, 1, GROUND.timberLite)
+    this.fillRect(ox, oy, 1, oh, GROUND.timberLite)
+    this.fillRect(ox + ow - 1, oy, 1, oh, GROUND.timberShadow)
+    this.fillRect(ox, oy + oh - d, ow, d, GROUND.timberDark)
+    this.fillRect(ox, oy + oh - 1, ow, 1, GROUND.timberShadow)
+    this.fillPx(ox + 2, oy + 2, GROUND.patina)
+    this.fillPx(ox + ow - 3, oy + 2, GROUND.patina)
+    this.fillPx(ox + 2, oy + oh - d - 2, GROUND.patina)
+    this.fillPx(ox + ow - 3, oy + oh - d - 2, GROUND.patina)
+
+    const sx = ox + t
+    const sy = oy + t
+    const sw = ow - t * 2
+    const sh = oh - t - d
+    this.fillRect(sx, sy, sw, sh, GROUND.bedSoil)
+    for (let y = sy; y < sy + sh; y++) {
+      for (let x = sx; x < sx + sw; x++) {
+        const n = (x * 13 + y * 7) % 17
+        if (n === 0) this.fillPx(x, y, GROUND.bedSoilDark)
+        else if (n === 8) this.fillPx(x, y, GROUND.bedSoilLight)
       }
     }
   }

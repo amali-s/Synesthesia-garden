@@ -11,7 +11,6 @@ import { GardenRenderer } from './garden/renderer'
 
 const LOGICAL_W = 320
 const LOGICAL_H = 200
-const SOIL_Y = 88
 
 const app = document.querySelector<HTMLDivElement>('#app')!
 app.innerHTML = `
@@ -36,14 +35,7 @@ app.innerHTML = `
     </header>
 
     <main class="meadow">
-      <div class="window-frame" aria-hidden="false">
-        <div class="window-frame__ornament window-frame__ornament--tl" aria-hidden="true"></div>
-        <div class="window-frame__ornament window-frame__ornament--tr" aria-hidden="true"></div>
-        <div class="window-frame__ornament window-frame__ornament--bl" aria-hidden="true"></div>
-        <div class="window-frame__ornament window-frame__ornament--br" aria-hidden="true"></div>
-        <div class="window-frame__rail window-frame__rail--top" aria-hidden="true"></div>
-        <div class="window-frame__rail window-frame__rail--bottom" aria-hidden="true"></div>
-        <div class="window-frame__mullion" aria-hidden="true"></div>
+      <div class="window-frame">
         <div class="window-frame__glass">
           <canvas id="garden" aria-label="Pixel art garden grown from your voice or music"></canvas>
         </div>
@@ -63,7 +55,7 @@ const pitchHz = document.querySelector<HTMLSpanElement>('#pitch-hz')!
 const statusEl = document.querySelector<HTMLDivElement>('#status')!
 const glass = document.querySelector<HTMLDivElement>('.window-frame__glass')!
 
-const garden = new Garden({ width: LOGICAL_W, height: LOGICAL_H, soilY: SOIL_Y })
+const garden = new Garden({ width: LOGICAL_W, height: LOGICAL_H })
 const detector = new PitchDetector()
 
 let listenMode: ListenMode = 'speaker'
@@ -72,15 +64,24 @@ let livePitchT: number | null = null
 let smoothedHz: number | null = null
 
 function computeScale(): number {
-  const pad = 4
-  const maxW = Math.max(1, (glass?.clientWidth ?? window.innerWidth) - pad)
-  const maxH = Math.max(1, (glass?.clientHeight ?? window.innerHeight) - pad)
+  const maxW = Math.max(1, glass?.clientWidth ?? window.innerWidth)
+  const maxH = Math.max(1, glass?.clientHeight ?? window.innerHeight)
   return Math.max(1, Math.floor(Math.min(maxW / LOGICAL_W, maxH / LOGICAL_H)))
 }
 
-const renderer = new GardenRenderer(canvas, LOGICAL_W, LOGICAL_H, SOIL_Y, {
+const renderer = new GardenRenderer(canvas, LOGICAL_W, LOGICAL_H, {
   scale: computeScale(),
 })
+
+function fitCanvas(): void {
+  renderer.setScale(computeScale())
+  canvas.style.left = '0'
+  canvas.style.top = '0'
+  canvas.style.width = '100%'
+  canvas.style.height = '100%'
+}
+
+fitCanvas()
 
 function setStatus(text: string): void {
   statusEl.textContent = text
@@ -210,10 +211,6 @@ modeSpeakerBtn.addEventListener('click', () => {
 modeMusicBtn.addEventListener('click', () => {
   applyMode('music')
 })
-
-function fitCanvas(): void {
-  renderer.setScale(computeScale())
-}
 
 window.addEventListener('resize', fitCanvas)
 if (typeof ResizeObserver !== 'undefined' && glass) {
