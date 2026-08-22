@@ -2,7 +2,7 @@
 
 Living snapshot of Synesthesia Garden. Update this file at the start of a session (if the repo moved) and at the end of any phase or sizable change.
 
-**Last reviewed:** 2026-08-22 (Phase 5 bloom chime)  
+**Last reviewed:** 2026-08-22 (kind/hue uncoupled from patch)  
 **Active phase:** none (Phases 1–5 done)  
 **Next recommended work:** [Phase 6 — Keep what grew](./ROADMAP.md#phase-6--keep-what-grew)
 
@@ -24,9 +24,9 @@ Shipped loop: **Speaker or Music → Listen → flowers; pause → grass in gaps
 | --- | --- |
 | Mic pitch garden | **Shipped** — Listen / Stop / Clear |
 | Speaker vs Music listen | **Shipped** — top-bar toggle; Music uses `getDisplayMedia` + Share audio |
-| Pitch → kind + hue | **Shipped** — log2 80–1000 Hz (Speaker); 50–4000 Hz (Music) |
+| Pitch → patch; chroma + timbre → kind/hue | **Shipped** — log2 80–1000 Hz (Speaker); 50–4000 Hz (Music) |
 | Loudness → stem + bloom | **Shipped** — log RMS, AGC off |
-| Timbre → kind nudge + contrast | **Shipped** — spectral centroid |
+| Timbre → kind (with chroma) + contrast | **Shipped** — spectral centroid |
 | Rhythm → sway / petal-open | **Shipped** — garden-level onset pulse; grass rustles on hits |
 | Silence → grass | **Shipped** — grass fills empty cells |
 | Percussion → motion only | **Shipped** — drum-like frames pulse, do not plant |
@@ -64,7 +64,8 @@ Pitch pipeline (`src/audio/pitch.ts`):
 - Autocorrelation + parabolic interpolation
 - Speaker: plant if RMS ≥ `0.012` and Hz in 80–1000
 - Music: plant if RMS ≥ `0.008` and Hz in 50–4000 (`isVoice` is the plant gate for both)
-- `pitchNorm` is **log2** 80–1000 Hz in Speaker, **50–4000 Hz** in Music (drives kind walk + hue + beds; clamps outside)
+- `pitchNorm` is **log2** 80–1000 Hz in Speaker, **50–4000 Hz** in Music (drives beds + mild sat/light; clamps outside)
+- `pitchClassT` is octave position from A (drives petal hue + part of kind)
 - `loudnessT` log-maps RMS from the mode’s silence floor to ~0.25
 - `timbreT` log-maps spectral centroid ~200–4000 Hz
 - Onset via spectral flux and positive d(RMS)/dt (~120 ms refractory)
@@ -75,16 +76,19 @@ Garden (`src/garden/world.ts`):
 - Flower while pitched; cooldown **105–480 ms** from tempo (220 ms at 120 BPM); drums do not spawn
 - Stores `pitchT`, `loudnessT`, `timbreT`, `hz`
 - `hitFlowerAt` — front-most flower in logical space (ignore grass / empty soil)
-- Kind: `round(pitchT * 6 + (timbreT - 0.5) * 2.5)` clamped 0–6
+- Kind: `(round(timbreT * 6) + round(pitchClassT * 6)) % 7` — not register, so a patch can mix species
+- Hue: chroma picks the family; high pitch/timbre mixes to jewel hexes, low to soft dusty/mist; taupe wilt
 - Stem ~5–14 logical px × grow envelope; quiet = compact bloom, loud = full petals
-- Bright timbre raises petal contrast; onsets add ~200 ms extra sway + petal-open; grass rustles on the same pulse
+- Bright timbre raises petal contrast + saturation; onsets add ~200 ms extra sway + petal-open; grass rustles on the same pulse
 - Grass after ~360 ms accumulated pause, using **real frame delta**
 - Placement: empty soil cells across the whole patch, preferring spots farthest from plants already in the bed (no same-pitch clumps)
 - Grass prefers empty neighbor cells
 - Cap ~560 living plants; oldest **wilt/fade** (~2.6 s) instead of hard splice
 - Lifecycle: seed (~0.8 s) → bloom (~12 s) → rest (droop) → wilt when over cap
 
-Manual checks (2026-08-15): sung scale walks all 7 kinds; low vs high → different kinds/hues; quiet vs belt at one pitch → stem/bloom only; oo vs ee at one pitch → kind + contrast; staccato refreshes onset, drone does not; silence → grass.
+Manual checks (2026-08-15): sung scale walks kinds; quiet vs belt at one pitch → stem/bloom only; oo vs ee at one pitch → kind + contrast; staccato refreshes onset, drone does not; silence → grass.
+
+Mapping check (2026-08-22): a sung scale no longer dumps one red kind per timber; notes in one patch mix hues; same note in two octaves can share a kind across front/back.
 
 Music path (2026-08-18): Speaker + Listen still mic-only; Music + Listen prompts tab/window share; no audio / cancel / Safari leaves Speaker working; streams are never mixed.
 
@@ -115,7 +119,7 @@ These files are in the tree; the live UI does not use them.
 
 ### Phase 1 — Mapping
 
-Done. Leftover: `plant.baseHue` is still unused by `drawFlower` (it uses `baseHueForKind`); `FLOWER_BASE_HUES` overlaps that map.
+Done. Leftover: `baseHueForKind` is only a draw fallback if `baseHue` is omitted.
 
 ### Phase 2 — Music vs Speaker
 

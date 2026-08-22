@@ -1,4 +1,4 @@
-import { type PitchSample } from '../audio/pitch'
+import { pitchClassT, type PitchSample } from '../audio/pitch'
 import {
   GARDEN_BEDS,
   bedById,
@@ -10,8 +10,9 @@ import {
   type BedId,
   type GardenBed,
 } from './beds'
-import { FLOWER_BASE_HUES } from './palette'
-import { kindFromPitch, type FlowerKind } from './sprites'
+import { hueFromPitchClass } from './palette'
+import { bloomHitSize } from './bloomArt'
+import { kindFromSound, type FlowerKind } from './sprites'
 
 export type PlantLife = 'seed' | 'bloom' | 'rest' | 'wilt'
 
@@ -51,8 +52,8 @@ const SPAWN_COOLDOWN_MS = 220
 const PAUSE_GRASS_MS = 360
 /** Living plants before the oldest begin to wilt */
 const MAX_LIVING = 560
-const CELL_W = 8
-const CELL_H = 7
+const CELL_W = 12
+const CELL_H = 14
 
 export const SEED_MS = 800
 export const BLOOM_MS = 12_000
@@ -269,8 +270,8 @@ export class Garden {
     const pitchT = sample.pitchT
     const bed = bedFromPitch(pitchT)
     this.lastBedId = bed.id
-    const kind = kindFromPitch(pitchT, sample.timbreT)
-    const hueIndex = Math.floor(pitchT * FLOWER_BASE_HUES.length) % FLOWER_BASE_HUES.length
+    const pcT = pitchClassT(hz)
+    const kind = kindFromSound(sample.timbreT, pcT)
     const { x, y } = this.placeFlower(bed)
     this.plants.push({
       type: 'flower',
@@ -283,7 +284,7 @@ export class Garden {
       timbreT: sample.timbreT,
       hz,
       born: now,
-      baseHue: FLOWER_BASE_HUES[hueIndex]!,
+      baseHue: hueFromPitchClass(pcT),
       wiltStarted: null,
     })
     this.startWilts(now)
@@ -339,18 +340,17 @@ export function plantLife(plant: Plant, now: number): PlantLifeState {
 
 function flowerContains(plant: FlowerPlant, lx: number, ly: number, now: number): boolean {
   const life = plantLife(plant, now)
-  const stemH = Math.max(
-    1,
-    Math.round((5 + plant.loudnessT * 9) * life.grow * (1 - life.wiltT * 0.4)),
+  const grow = life.phase === 'seed' ? life.grow : 1
+  const { w, h } = bloomHitSize(
+    plant.kind,
+    plant.loudnessT,
+    grow,
+    life.restT,
+    life.wiltT,
   )
-  const bloomScale = Math.min(
-    1.15,
-    (0.5 + 0.5 * plant.loudnessT) * (1 - life.restT * 0.12) * (1 - life.wiltT * 0.35),
-  )
-  const r = 6 * Math.max(0.45, bloomScale)
-  const x0 = plant.x - r - 2
-  const x1 = plant.x + r + 2
-  const y0 = plant.y - stemH - r - 1
+  const x0 = plant.x - w / 2 - 1
+  const x1 = plant.x + w / 2 + 1
+  const y0 = plant.y - h - 1
   const y1 = plant.y + 2
   return lx >= x0 && lx <= x1 && ly >= y0 && ly <= y1
 }

@@ -113,6 +113,8 @@ export class GardenRenderer {
       onsetPulse,
       life.restT,
       life.wiltT,
+      plant.baseHue,
+      plant.hz,
     )
   }
 

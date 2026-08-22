@@ -677,6 +677,12 @@ export function pitchNorm(hz: number, mode: ListenMode = 'speaker'): number {
   return logNorm(hz, VOCAL_MIN_HZ, VOCAL_MAX_HZ)
 }
 
+/** Position in the octave (A=0 … just below next A=1), independent of register. */
+export function pitchClassT(hz: number): number {
+  const semitones = 12 * Math.log2(Math.max(hz, 1) / 440)
+  return (((semitones % 12) + 12) % 12) / 12
+}
+
 /** Map RMS into 0–1 from silence up to a belt */
 export function loudnessNorm(rms: number, silence = SILENCE_THRESHOLD): number {
   return logNorm(rms, silence, LOUDNESS_MAX_RMS)

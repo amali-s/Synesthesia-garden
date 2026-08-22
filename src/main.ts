@@ -9,6 +9,7 @@ import {
 import { BloomChime } from './audio/chime'
 import { Garden, type FlowerPlant } from './garden/world'
 import { GardenRenderer } from './garden/renderer'
+import { loadBloomArt } from './garden/bloomArt'
 
 const LOGICAL_W = 320
 const LOGICAL_H = 200
@@ -79,6 +80,7 @@ function computeScale(): number {
 const renderer = new GardenRenderer(canvas, LOGICAL_W, LOGICAL_H, {
   scale: computeScale(),
 })
+void loadBloomArt()
 
 function fitCanvas(): void {
   renderer.setScale(computeScale())

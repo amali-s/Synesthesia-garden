@@ -1,6 +1,6 @@
 /**
  * Chrome / ground only — UI frame, timber, gravel.
- * Do not use these for flowers or grass (those stay on PASTEL + pitch hues).
+ * Do not use these for flowers or grass (flowers use BLOOM_HEX; grass stays PASTEL).
  */
 export const GROUND = {
   ink: '#4A2E2A',
@@ -107,29 +107,196 @@ export function skyForListenMs(listenMs: number): {
   }
 }
 
-/** Art Nouveau flower family base hues (degrees) */
-export const FLOWER_BASE_HUES = [
-  350, // dusty rose
-  28, // apricot / peach
-  42, // antique gold
-  145, // sage green
-  175, // peacock teal
-  265, // soft mauve
-  320, // orchid lilac
+/**
+ * Art Nouveau bloom jewels (Mucha / Tiffany). Petals only mix these hexes —
+ * no free HSL hue walk, which was drifting into extra reds and greens.
+ */
+export const BLOOM_HEX = {
+  lilac: '#B6A9C9',
+  lilacMist: '#E9E1F2',
+  slate: '#5A6B7A',
+  terracotta: '#B0563C',
+  coral: '#D98962',
+  gold: '#D7B46A',
+  teal: '#1F5C5A',
+  plum: '#5A2E5C',
+  rose: '#A25D7C',
+  amber: '#D7A13A',
+  taupe: '#9C6B6A',
+  blush: '#E7B9B1',
+} as const
+
+/**
+ * Parallel chroma walks (same note class).
+ * Soft = low pitch / dull timbre; jewel = high pitch or bright timbre.
+ */
+export const BLOOM_SOFT = [
+  BLOOM_HEX.slate,
+  BLOOM_HEX.taupe,
+  BLOOM_HEX.lilac,
+  BLOOM_HEX.blush,
+  BLOOM_HEX.rose,
+  BLOOM_HEX.lilacMist,
+] as const
+
+export const BLOOM_JEWEL = [
+  BLOOM_HEX.teal,
+  BLOOM_HEX.terracotta,
+  BLOOM_HEX.plum,
+  BLOOM_HEX.gold,
+  BLOOM_HEX.coral,
+  BLOOM_HEX.amber,
 ] as const
 
 export type Hsl = { h: number; s: number; l: number }
+export type Rgb = [number, number, number]
 
-/**
- * Higher pitch → higher hue shift + saturation.
- * Bright timbre slightly boosts saturation for petal contrast.
- * Kept soft so blooms stay in the Nouveau jewel range.
- */
+function mixRgb(a: Rgb, b: Rgb, t: number): Rgb {
+  const u = Math.min(1, Math.max(0, t))
+  return [
+    Math.round(a[0] + (b[0] - a[0]) * u),
+    Math.round(a[1] + (b[1] - a[1]) * u),
+    Math.round(a[2] + (b[2] - a[2]) * u),
+  ]
+}
+
+function rgbToHsl([r, g, b]: Rgb): Hsl {
+  const R = r / 255
+  const G = g / 255
+  const B = b / 255
+  const max = Math.max(R, G, B)
+  const min = Math.min(R, G, B)
+  const l = (max + min) / 2
+  if (max === min) return { h: 0, s: 0, l: l * 100 }
+  const d = max - min
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min)
+  let h = 0
+  if (max === R) h = (G - B) / d + (G < B ? 6 : 0)
+  else if (max === G) h = (B - R) / d + 2
+  else h = (R - G) / d + 4
+  return { h: h * 60, s: s * 100, l: l * 100 }
+}
+
+function hslToRgb({ h, s, l }: Hsl): Rgb {
+  const H = ((h % 360) + 360) % 360 / 360
+  const S = Math.min(1, Math.max(0, s / 100))
+  const L = Math.min(1, Math.max(0, l / 100))
+  if (S < 1e-6) {
+    const v = Math.round(L * 255)
+    return [v, v, v]
+  }
+  const q = L < 0.5 ? L * (1 + S) : L + S - L * S
+  const p = 2 * L - q
+  const hue = (t: number) => {
+    let u = t
+    if (u < 0) u += 1
+    if (u > 1) u -= 1
+    if (u < 1 / 6) return p + (q - p) * 6 * u
+    if (u < 1 / 2) return q
+    if (u < 2 / 3) return p + (q - p) * (2 / 3 - u) * 6
+    return p
+  }
+  return [
+    Math.round(hue(H + 1 / 3) * 255),
+    Math.round(hue(H) * 255),
+    Math.round(hue(H - 1 / 3) * 255),
+  ]
+}
+
+function isWarmHue(h: number): boolean {
+  const x = ((h % 360) + 360) % 360
+  return x < 55 || x >= 330
+}
+
+function mixHex(a: Rgb, hex: string, t: number): Rgb {
+  return mixRgb(a, hexToRgb(hex), t)
+}
+
+function chromaRgb(stops: readonly string[], pcT: number): Rgb {
+  const n = stops.length
+  const x = ((((pcT % 1) + 1) % 1) * n) % n
+  const i = Math.floor(x)
+  const f = x - i
+  return mixRgb(hexToRgb(stops[i]!), hexToRgb(stops[(i + 1) % n]!), f)
+}
+
+/** 0 = dusty / mist; 1 = stained-glass. High pitch or bright timbre either count. */
+function jewelMix(pitchT: number, timbreT: number): number {
+  const t = Math.min(1, Math.max(0, 0.58 * pitchT + 0.42 * timbreT))
+  return t * t * (3 - 2 * t)
+}
+
+/** Note class picks the family; pitch + timbre pick soft vs jewel. */
+export function colorFromBloom(pcT: number, pitchT = 0.5, timbreT = 0.5): Hsl {
+  const soft = chromaRgb(BLOOM_SOFT, pcT)
+  const jewel = chromaRgb(BLOOM_JEWEL, pcT)
+  const rgb = mixRgb(soft, jewel, jewelMix(pitchT, timbreT))
+  return rgbToHsl(rgb)
+}
+
+export function hueFromPitchClass(pcT: number): number {
+  return colorFromBloom(pcT, 0.45, 0.5).h
+}
+
+export function bloomDeep(mid: Hsl, pitchT: number, timbreT: number): string {
+  const j = jewelMix(pitchT, timbreT)
+  const shade = isWarmHue(mid.h)
+    ? j > 0.45
+      ? BLOOM_HEX.terracotta
+      : BLOOM_HEX.taupe
+    : j > 0.45
+      ? BLOOM_HEX.teal
+      : BLOOM_HEX.slate
+  return hslCss(rgbToHsl(mixHex(hslToRgb(mid), shade, 0.22 + j * 0.2)))
+}
+
+export function bloomLite(mid: Hsl, pitchT: number, timbreT: number): string {
+  const j = jewelMix(pitchT, timbreT)
+  const tint = isWarmHue(mid.h) ? BLOOM_HEX.blush : BLOOM_HEX.lilacMist
+  return hslCss(rgbToHsl(mixHex(hslToRgb(mid), tint, 0.42 - j * 0.22)))
+}
+
+export function bloomCenter(mid: Hsl): Hsl {
+  const jewel = mid.s > 38 || mid.l < 48
+  return rgbToHsl(mixHex(hslToRgb(mid), jewel ? BLOOM_HEX.gold : BLOOM_HEX.blush, 0.42))
+}
+
+export function bloomWilt(mid: Hsl, wiltT: number): Hsl {
+  return rgbToHsl(mixHex(hslToRgb(mid), BLOOM_HEX.taupe, wiltT))
+}
+
+export function bloomPaintRgb(
+  pcT: number,
+  pitchT: number,
+  timbreT: number,
+  wiltT = 0,
+): { mid: Rgb; deep: Rgb; lite: Rgb; center: Rgb } {
+  let midH = colorFromBloom(pcT, pitchT, timbreT)
+  if (wiltT > 0) midH = bloomWilt(midH, wiltT)
+  const j = jewelMix(pitchT, timbreT)
+  const deepShade = isWarmHue(midH.h)
+    ? j > 0.45
+      ? BLOOM_HEX.terracotta
+      : BLOOM_HEX.taupe
+    : j > 0.45
+      ? BLOOM_HEX.teal
+      : BLOOM_HEX.slate
+  const liteTint = isWarmHue(midH.h) ? BLOOM_HEX.blush : BLOOM_HEX.lilacMist
+  const mid = hslToRgb(midH)
+  let deep = mixHex(mid, deepShade, 0.22 + j * 0.2)
+  let lite = mixHex(mid, liteTint, 0.42 - j * 0.22)
+  let center = mixHex(mid, midH.s > 38 || midH.l < 48 ? BLOOM_HEX.gold : BLOOM_HEX.blush, 0.42)
+  if (wiltT > 0) {
+    const taupe = hexToRgb(BLOOM_HEX.taupe)
+    deep = mixRgb(deep, taupe, wiltT)
+    lite = mixRgb(lite, taupe, wiltT)
+    center = mixRgb(center, taupe, wiltT)
+  }
+  return { mid, deep, lite, center }
+}
+
 export function colorFromPitch(baseHue: number, pitchT: number, timbreT = 0.5): Hsl {
-  const h = (baseHue + pitchT * 42) % 360
-  const s = 28 + pitchT * 44 + (timbreT - 0.5) * 16
-  const l = 68 - pitchT * 14
-  return { h, s, l }
+  return colorFromBloom((((baseHue % 360) + 360) % 360) / 360, pitchT, timbreT)
 }
 
 export function hslCss({ h, s, l }: Hsl): string {
