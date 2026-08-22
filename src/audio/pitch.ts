@@ -106,6 +106,10 @@ export class PitchDetector {
     this.prevLin = new Float32Array(this.analyser.frequencyBinCount)
   }
 
+  get audioContext(): AudioContext {
+    return this.ctx
+  }
+
   get isRunning(): boolean {
     return this.kind !== 'none'
   }

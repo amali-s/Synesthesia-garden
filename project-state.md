@@ -2,9 +2,9 @@
 
 Living snapshot of Synesthesia Garden. Update this file at the start of a session (if the repo moved) and at the end of any phase or sizable change.
 
-**Last reviewed:** 2026-08-21 (chrome palette from Figma 13:89)  
-**Active phase:** none (Phases 1–4 done)  
-**Next recommended work:** [Phase 5 — Replay bloom as chime](./ROADMAP.md#phase-5--replay-bloom-as-chime)
+**Last reviewed:** 2026-08-22 (Phase 5 bloom chime)  
+**Active phase:** none (Phases 1–5 done)  
+**Next recommended work:** [Phase 6 — Keep what grew](./ROADMAP.md#phase-6--keep-what-grew)
 
 Plan and acceptance criteria: [`ROADMAP.md`](./ROADMAP.md)
 
@@ -14,7 +14,7 @@ Plan and acceptance criteria: [`ROADMAP.md`](./ROADMAP.md)
 
 A pixel-art meadow that grows from **voice or music already playing on the device**: pitch, loudness, timbre, and rhythm become kind, hue, size, and motion. Speaker mode uses the microphone; Music mode captures tab/window/system audio. Autocorrelation pitch detector; flowers from pitched sound, grass from quiet. Art Nouveau frame and palette (Mucha / Tiffany jewel tones).
 
-Shipped loop: **Speaker or Music → Listen → flowers; pause → grass in gaps; Stop; Clear garden.**
+Shipped loop: **Speaker or Music → Listen → flowers; pause → grass in gaps; Stop; hover/tap a bloom to hear its pitch; Clear garden.**
 
 ---
 
@@ -33,6 +33,7 @@ Shipped loop: **Speaker or Music → Listen → flowers; pause → grass in gaps
 | Duration + pan → side | **Shipped** — long vs staccato and L/R as combined x biases |
 | Section energy → depth | **Shipped** — quiet front, loud/chorus back |
 | Tempo → spawn rate | **Shipped** — BPM from inter-onset intervals; cooldown 105–480 ms |
+| Bloom chime | **Shipped** — hover (desktop) / tap (touch) plays stored `hz`; grass silent |
 | Full-page meadow | **Shipped** — 320×200 logical, canvas fills leftover viewport |
 | Organic placement | **Shipped** — even fill of empty cells in each patch |
 | Lifecycle | **Shipped** — seed → bloom → rest; oldest wilt instead of splice |
@@ -56,6 +57,7 @@ UI in `src/main.ts` is a full-page meadow with two listen sources (one at a time
 - **Listen / Stop** — uses the selected mode; switching mode while listening stops the current stream, then starts the new one
 - **Clear garden** — instant reset of plants (listen-time sky keeps going)
 - **Pixel garden** — 320×200 logical, integer scale to leftover viewport; **2×4** timber patches (`f0`–`f3` front / `b0`–`b3` back), pitch left→right then front→back; seven flower kinds, swaying grass; green vine frame and Figma chrome
+- **Bloom chime** — hover a flower (mouse/pen) or tap (touch) plays a short sine/bell at that plant’s stored `hz`; click while hovering chimes again; one hover-chime until the pointer leaves; grass and empty soil are silent; wilted blooms still chime while on screen. Uses the same AudioContext as Listen, routed to destination (not the analyser). `BloomChime.muted` is the later reduced-motion gate; it is not wired yet.
 
 Pitch pipeline (`src/audio/pitch.ts`):
 
@@ -71,7 +73,8 @@ Pitch pipeline (`src/audio/pitch.ts`):
 Garden (`src/garden/world.ts`):
 
 - Flower while pitched; cooldown **105–480 ms** from tempo (220 ms at 120 BPM); drums do not spawn
-- Stores `pitchT`, `loudnessT`, `timbreT`
+- Stores `pitchT`, `loudnessT`, `timbreT`, `hz`
+- `hitFlowerAt` — front-most flower in logical space (ignore grass / empty soil)
 - Kind: `round(pitchT * 6 + (timbreT - 0.5) * 2.5)` clamped 0–6
 - Stem ~5–14 logical px × grow envelope; quiet = compact bloom, loud = full petals
 - Bright timbre raises petal contrast; onsets add ~200 ms extra sway + petal-open; grass rustles on the same pulse
@@ -86,6 +89,8 @@ Manual checks (2026-08-15): sung scale walks all 7 kinds; low vs high → differ
 Music path (2026-08-18): Speaker + Listen still mic-only; Music + Listen prompts tab/window share; no audio / cancel / Safari leaves Speaker working; streams are never mixed.
 
 Music layout (2026-08-19): stereo mix uses L/R tap (not played through the garden); Speaker / mono pan stays center; duration, tempo, and section energy apply in both modes.
+
+Bloom chime (2026-08-22): pointer maps CSS-stretched canvas → backing store / `getScale()` → logical pixel. Flowers chime at stored `hz` (not the live mix); grass does not.
 
 ---
 
@@ -137,8 +142,11 @@ Done. Leftovers / honest limits:
 
 ### Phase 5 — Replay bloom as chime
 
-- Flowers store `hz` / `pitchT` / `timbreT` but do not play them back
-- No canvas hit-test, hover, or tap chime
+Done. Leftovers / honest limits:
+
+- Approximate note (sine + partials), not a sample of the voice or mix
+- No chord per cluster
+- `BloomChime.muted` exists for Phase 8; chimes are not yet skipped for `prefers-reduced-motion`
 
 ### Phase 6 — Keep
 
@@ -173,7 +181,7 @@ Done. Leftovers / honest limits:
 | 2 | Music mode vs Speaker mode | Done |
 | 3 | Organic garden + lifecycle | Done |
 | 4 | Music mix → garden layout | Done |
-| 5 | Replay bloom as chime | Not started |
+| 5 | Replay bloom as chime | Done |
 | 6 | Keep what grew (PNG / share) | Not started |
 | 7 | Canvas + pitch performance | Not started |
 | 8 | Teach the mapping + a11y | Not started |
@@ -185,12 +193,13 @@ Done. Leftovers / honest limits:
 ## Layout (as of last review)
 
 ```
-src/main.ts                 UI + rAF loop (Speaker/Music top bar + meadow)
+src/main.ts                 UI + rAF loop (Speaker/Music top bar + meadow + bloom pointer)
 src/audio/pitch.ts          Detector + mic / display capture + mix layout (pan, duration, tempo, drums)
+src/audio/chime.ts          Short bloom tone at stored hz (shared AudioContext)
 src/audio/songPlayer.ts     Unused by UI
 src/audio/spotifyUrl.ts     Unused by UI
 src/audio/qobuzUrl.ts       Unused by UI
-src/garden/world.ts         Clusters, mix-layout x/y, tempo cooldown, gap grass, lifecycle
+src/garden/world.ts         Clusters, mix-layout x/y, tempo cooldown, gap grass, lifecycle, bloom hit-test
 src/garden/renderer.ts      Full-scene draw; listen-time sky
 src/garden/sprites.ts       Pixel flowers / grass (life + wilt)
 src/garden/palette.ts       GROUND + ACCENTS (Figma lace/planter) + pitch hue + sky watch

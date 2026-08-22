@@ -6,7 +6,8 @@ import {
   pitchNorm,
   type ListenMode,
 } from './audio/pitch'
-import { Garden } from './garden/world'
+import { BloomChime } from './audio/chime'
+import { Garden, type FlowerPlant } from './garden/world'
 import { GardenRenderer } from './garden/renderer'
 
 const LOGICAL_W = 320
@@ -57,11 +58,17 @@ const glass = document.querySelector<HTMLDivElement>('.window-frame__glass')!
 
 const garden = new Garden({ width: LOGICAL_W, height: LOGICAL_H })
 const detector = new PitchDetector()
+const chime = new BloomChime(detector.audioContext)
 
 let listenMode: ListenMode = 'speaker'
 let listening = false
 let livePitchT: number | null = null
 let smoothedHz: number | null = null
+let lastFrameNow = 0
+/** Flower the pointer is currently over; one hover-chime until leave. */
+let hoverFlower: FlowerPlant | null = null
+/** Ignore synthesized mouse hover after a tap. */
+let suppressMouseHoverUntil = 0
 
 function computeScale(): number {
   const maxW = Math.max(1, glass?.clientWidth ?? window.innerWidth)
@@ -201,7 +208,76 @@ stopBtn.addEventListener('click', () => {
 
 clearBtn.addEventListener('click', () => {
   garden.clear()
+  hoverFlower = null
+  canvas.classList.remove('is-over-bloom')
   setStatus('Garden cleared — a fresh bed awaits')
+})
+
+function pointerToLogical(e: PointerEvent): { x: number; y: number } | null {
+  const rect = canvas.getBoundingClientRect()
+  if (rect.width <= 0 || rect.height <= 0) return null
+  const scale = renderer.getScale()
+  const backingX = ((e.clientX - rect.left) * canvas.width) / rect.width
+  const backingY = ((e.clientY - rect.top) * canvas.height) / rect.height
+  return { x: backingX / scale, y: backingY / scale }
+}
+
+function flowerUnder(e: PointerEvent): FlowerPlant | null {
+  const pt = pointerToLogical(e)
+  if (!pt) return null
+  return garden.hitFlowerAt(pt.x, pt.y, lastFrameNow || performance.now())
+}
+
+function hoverPointer(e: PointerEvent): boolean {
+  if (e.pointerType === 'touch') return false
+  if (e.pointerType === 'mouse' && performance.now() < suppressMouseHoverUntil) {
+    return false
+  }
+  return e.pointerType === 'mouse' || e.pointerType === 'pen'
+}
+
+function setBloomCursor(on: boolean): void {
+  canvas.classList.toggle('is-over-bloom', on)
+}
+
+function chimeFlower(plant: FlowerPlant): void {
+  chime.play(plant.hz, plant.timbreT, plant.loudnessT)
+}
+
+canvas.addEventListener('pointerdown', (e) => {
+  void chime.unlock()
+  if (e.pointerType === 'touch') suppressMouseHoverUntil = performance.now() + 800
+  const flower = flowerUnder(e)
+  setBloomCursor(flower !== null)
+  if (!flower) {
+    hoverFlower = null
+    return
+  }
+  hoverFlower = flower
+  chimeFlower(flower)
+})
+
+canvas.addEventListener('pointermove', (e) => {
+  void chime.unlock()
+  const flower = flowerUnder(e)
+  setBloomCursor(flower !== null)
+  if (!hoverPointer(e)) {
+    if (!flower) hoverFlower = null
+    return
+  }
+  if (flower === hoverFlower) return
+  hoverFlower = flower
+  if (flower) chimeFlower(flower)
+})
+
+canvas.addEventListener('pointerleave', () => {
+  hoverFlower = null
+  setBloomCursor(false)
+})
+
+canvas.addEventListener('pointercancel', () => {
+  hoverFlower = null
+  setBloomCursor(false)
 })
 
 modeSpeakerBtn.addEventListener('click', () => {
@@ -218,6 +294,7 @@ if (typeof ResizeObserver !== 'undefined' && glass) {
 }
 
 function frame(now: number): void {
+  lastFrameNow = now
   garden.tick(now, listening)
 
   if (listening) {

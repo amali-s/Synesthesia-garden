@@ -5,6 +5,7 @@ import {
   bedCols,
   bedFromPitch,
   bedRows,
+  bedsBackToFront,
   soilRect,
   type BedId,
   type GardenBed,
@@ -38,6 +39,8 @@ export type Plant =
       born: number
       wiltStarted: number | null
     }
+
+export type FlowerPlant = Extract<Plant, { type: 'flower' }>
 
 export type GardenConfig = {
   width: number
@@ -81,6 +84,26 @@ export class Garden {
     this.lastSpawn = 0
     this.lastVoice = 0
     this.lastOnset = 0
+  }
+
+  /**
+   * Front-most flower at a logical pixel, or null for grass / empty soil.
+   * Draw order is back beds then y-sort; hit-test walks the reverse.
+   */
+  hitFlowerAt(lx: number, ly: number, now: number): FlowerPlant | null {
+    const beds = bedsBackToFront()
+    for (let b = beds.length - 1; b >= 0; b--) {
+      const bed = beds[b]!
+      const flowers: FlowerPlant[] = []
+      for (const p of this.plants) {
+        if (p.type === 'flower' && p.bedId === bed.id) flowers.push(p)
+      }
+      flowers.sort((a, c) => c.y - a.y)
+      for (const plant of flowers) {
+        if (flowerContains(plant, lx, ly, now)) return plant
+      }
+    }
+    return null
   }
 
   /**
@@ -312,6 +335,24 @@ export function plantLife(plant: Plant, now: number): PlantLifeState {
   }
   const restT = clamp((age - SEED_MS - BLOOM_MS) / REST_EASE_MS, 0, 1)
   return { phase: 'rest', grow: 1, restT, wiltT: 0 }
+}
+
+function flowerContains(plant: FlowerPlant, lx: number, ly: number, now: number): boolean {
+  const life = plantLife(plant, now)
+  const stemH = Math.max(
+    1,
+    Math.round((5 + plant.loudnessT * 9) * life.grow * (1 - life.wiltT * 0.4)),
+  )
+  const bloomScale = Math.min(
+    1.15,
+    (0.5 + 0.5 * plant.loudnessT) * (1 - life.restT * 0.12) * (1 - life.wiltT * 0.35),
+  )
+  const r = 6 * Math.max(0.45, bloomScale)
+  const x0 = plant.x - r - 2
+  const x1 = plant.x + r + 2
+  const y0 = plant.y - stemH - r - 1
+  const y1 = plant.y + 2
+  return lx >= x0 && lx <= x1 && ly >= y0 && ly <= y1
 }
 
 function spawnCooldownMs(spawnScale: number): number {
