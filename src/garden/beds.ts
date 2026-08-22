@@ -1,13 +1,18 @@
-/** Four equal raised patches in a 2×2 grid (logical pixels). */
+/** Eight raised patches in a 2×4 grid (logical 320×200). */
 
-export const GRID_PAD = 20
-export const GRID_GAP = 16
-export const PATCH_W = 132
-export const PATCH_H = 72
+export const GRID_COLS = 4
+export const GRID_ROWS = 2
+/** Inset from canvas / vine frame; leaves room for the 2px planter drop-shadow. */
+export const GRID_PAD = 8
+/** Gutter between patches (shadow is 2px, so they never kiss). */
+export const GRID_GAP = 8
+export const PATCH_W = 70
+export const PATCH_H = 88
 export const TIMBER = 5
 export const LIP = 4
 
-export type BedId = 'bl' | 'br' | 'tl' | 'tr'
+/** Front row = lower register; back row = higher. Index 0 is leftmost. */
+export type BedId = 'f0' | 'f1' | 'f2' | 'f3' | 'b0' | 'b1' | 'b2' | 'b3'
 
 export type GardenBed = {
   id: BedId
@@ -22,72 +27,59 @@ export type GardenBed = {
   depth: number
 }
 
-function patch(col: 0 | 1, row: 0 | 1): { x: number; y: number } {
+function patch(col: 0 | 1 | 2 | 3, row: 0 | 1): { x: number; y: number } {
   return {
     x: GRID_PAD + col * (PATCH_W + GRID_GAP),
     y: GRID_PAD + row * (PATCH_H + GRID_GAP),
   }
 }
 
-const tl = patch(0, 0)
-const tr = patch(1, 0)
-const bl = patch(0, 1)
-const br = patch(1, 1)
+function makeBed(
+  id: BedId,
+  col: 0 | 1 | 2 | 3,
+  row: 0 | 1,
+  pitch0: number,
+  pitch1: number,
+): GardenBed {
+  const { x, y } = patch(col, row)
+  return {
+    id,
+    pitch0,
+    pitch1,
+    x,
+    y,
+    w: PATCH_W,
+    h: PATCH_H,
+    timber: TIMBER,
+    depth: LIP,
+  }
+}
 
+/**
+ * Pitch rises left→right within a row, then front→back to the next row.
+ * Front (bottom, nearer): 0–0.5   Back (top, farther): 0.5–1
+ *
+ *   b0  b1  b2  b3     0.50–0.625  0.625–0.75  0.75–0.875  0.875–1
+ *   f0  f1  f2  f3     0–0.125     0.125–0.25  0.25–0.375  0.375–0.5
+ */
 export const GARDEN_BEDS: GardenBed[] = [
-  {
-    id: 'tl',
-    pitch0: 0.5,
-    pitch1: 0.75,
-    x: tl.x,
-    y: tl.y,
-    w: PATCH_W,
-    h: PATCH_H,
-    timber: TIMBER,
-    depth: LIP,
-  },
-  {
-    id: 'tr',
-    pitch0: 0.75,
-    pitch1: 1.01,
-    x: tr.x,
-    y: tr.y,
-    w: PATCH_W,
-    h: PATCH_H,
-    timber: TIMBER,
-    depth: LIP,
-  },
-  {
-    id: 'bl',
-    pitch0: 0,
-    pitch1: 0.25,
-    x: bl.x,
-    y: bl.y,
-    w: PATCH_W,
-    h: PATCH_H,
-    timber: TIMBER,
-    depth: LIP,
-  },
-  {
-    id: 'br',
-    pitch0: 0.25,
-    pitch1: 0.5,
-    x: br.x,
-    y: br.y,
-    w: PATCH_W,
-    h: PATCH_H,
-    timber: TIMBER,
-    depth: LIP,
-  },
+  makeBed('b0', 0, 0, 0.5, 0.625),
+  makeBed('b1', 1, 0, 0.625, 0.75),
+  makeBed('b2', 2, 0, 0.75, 0.875),
+  makeBed('b3', 3, 0, 0.875, 1.01),
+  makeBed('f0', 0, 1, 0, 0.125),
+  makeBed('f1', 1, 1, 0.125, 0.25),
+  makeBed('f2', 2, 1, 0.25, 0.375),
+  makeBed('f3', 3, 1, 0.375, 0.5),
 ]
 
 export function bedFromPitch(pitchT: number): GardenBed {
   const t = Math.min(1, Math.max(0, pitchT))
-  return GARDEN_BEDS.find((b) => t >= b.pitch0 && t < b.pitch1) ?? GARDEN_BEDS[0]!
+  return GARDEN_BEDS.find((b) => t >= b.pitch0 && t < b.pitch1) ?? GARDEN_BEDS.find((b) => b.id === 'f0')!
 }
 
 export function bedById(id: BedId): GardenBed {
-  return GARDEN_BEDS.find((b) => b.id === id) ?? GARDEN_BEDS[2]!
+  return GARDEN_BEDS.find((b) => b.id === id) ?? GARDEN_BEDS.find((b) => b.id === 'f0')!
 }
 
 export function bedsBackToFront(): GardenBed[] {

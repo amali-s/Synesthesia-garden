@@ -3,22 +3,31 @@
  * Do not use these for flowers or grass (those stay on PASTEL + pitch hues).
  */
 export const GROUND = {
-  ink: '#2E2A24',
-  brass: '#7A6A55',
-  brassLite: '#C9B38C',
-  cream: '#EADFCB',
-  patina: '#4A6B63',
-  gravel: '#C7B27C',
-  gravelLight: '#f4eee2',
+  ink: '#4A2E2A',
+  brass: '#D8C7A5',
+  brassLite: '#E8E2D5',
+  cream: '#F7F1E8',
+  patina: '#1C5E3B',
+  gravel: '#E8E2D5',
+  gravelLight: '#F4EEE2',
   gravelDark: '#C9B38C',
-  timber: '#C9B38C',
-  timberDark: '#7A6A55',
-  timberShadow: '#2E2A24',
-  timberLite: '#EADFCB',
-  /** Darker brown than the path around the patches */
-  bedSoil: '#5a3d2b',
-  bedSoilDark: '#3a2418',
-  bedSoilLight: '#7a5640',
+  timber: '#C6B27C',
+  timberDark: '#897C59',
+  timberShadow: '#8B8478',
+  timberLite: '#D8C7A5',
+  bedSoil: '#4A2E2A',
+  bedSoilDark: '#3E281E',
+  bedSoilLight: '#734834',
+} as const
+
+/** Lace frame + planter strokes (from Figma palette) */
+export const ACCENTS = {
+  softGreen: '#A5C5A3',
+  borderGreen: '#2F6F42',
+  planterStroke: '#6E3A07',
+  rivetStroke: '#944D06',
+  planterLedge: '#C9AFA8',
+  soilOutline: '#4A2E2A',
 } as const
 
 /** Plant colors — unchanged by the chrome palette */

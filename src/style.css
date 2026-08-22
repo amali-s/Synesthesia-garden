@@ -6,22 +6,35 @@
   font-display: swap;
 }
 
+@font-face {
+  font-family: 'Wittgenstein';
+  src: url('./fonts/Wittgenstein-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
-  --ink: #2e2a24;
-  --brass: #7a6a55;
-  --brass-lite: #c9b38c;
-  --cream: #eadfcb;
-  --patina: #4a6b63;
-  --ink-soft: #7a6a55;
+  --ink: #4a2e2a;
+  --brass: #d8c7a5;
+  --brass-lite: #e8e2d5;
+  --cream: #f7f1e8;
+  --patina: #1c5e3b;
+  --ink-soft: #897c59;
   --petal: #c4878a;
-  --leaf: #7f9a72;
-  --teal: #4a6b63;
+  --leaf: #a5c5a3;
+  --teal: #2f6f42;
   --gold: #c9b38c;
-  --gold-deep: #7a6a55;
-  --mauve: #9b7b9e;
-  --panel: #eadfcb;
-  --shadow: #2e2a24;
+  --gold-deep: #6e3a07;
+  --mauve: #c9afa8;
+  --panel: #e8e2d5;
+  --shadow: #4a2e2a;
+  --soft-green: #a5c5a3;
+  --border-green: #2f6f42;
+  --planter-stroke: #6e3a07;
+  --rivet-stroke: #944d06;
   --font: 'VCR OSD Mono', ui-monospace, monospace;
+  --font-display: 'Wittgenstein', Georgia, 'Times New Roman', serif;
   font-family: var(--font);
   color: var(--ink);
   background: var(--patina);
@@ -81,10 +94,10 @@ body {
 
 .logo {
   margin: 0;
-  font-family: var(--font);
+  font-family: var(--font-display);
   font-weight: 700;
-  font-size: clamp(1.05rem, 2.4vw, 1.45rem);
-  letter-spacing: 0.02em;
+  font-size: clamp(1.15rem, 2.6vw, 1.65rem);
+  letter-spacing: 0.01em;
   color: var(--ink);
   text-shadow: 2px 2px 0 var(--brass-lite);
   white-space: nowrap;
@@ -102,12 +115,12 @@ body {
   background: var(--patina);
 }
 
-/* Two ropes twisted together */
+/* Woody vine + ivy leaves (CSS border-image) */
 .window-frame {
-  --frame-pad: 20px;
-  --frame-dark: #9c6b6a;
-  --frame-mid: #e7b9b1;
-  --frame-light: #f5efe6;
+  --frame-pad: 22px;
+  --frame-dark: var(--border-green);
+  --frame-mid: var(--soft-green);
+  --frame-light: var(--cream);
   position: relative;
   flex: 1 1 auto;
   width: 100%;
@@ -117,12 +130,12 @@ body {
   max-width: none;
   padding: 0;
   border: var(--frame-pad) solid var(--frame-dark);
-  border-image-source: url('./rope-frame.svg');
+  border-image-source: url('./vine-frame.svg');
   border-image-slice: 20;
   border-image-width: var(--frame-pad);
   border-image-repeat: round;
   border-radius: 0;
-  background: var(--frame-dark);
+  background: var(--soft-green);
   box-shadow: 4px 4px 0 var(--frame-dark);
 }
 
@@ -144,7 +157,7 @@ body {
   min-width: 0;
   overflow: hidden;
   border-radius: 0;
-  background: var(--cream);
+  background: var(--brass-lite);
 }
 
 #garden {
@@ -291,7 +304,7 @@ body {
 }
 
 .mode-btn[aria-pressed='true']#mode-music {
-  background: var(--brass);
+  background: var(--planter-stroke);
 }
 
 .btn {
@@ -331,7 +344,7 @@ body {
 }
 
 .btn.primary.active {
-  background: var(--brass);
+  background: var(--planter-stroke);
   color: var(--cream);
 }
 
@@ -453,7 +466,7 @@ body {
 
 @media (max-width: 720px) {
   .window-frame {
-    --frame-pad: 20px;
+    --frame-pad: 18px;
   }
 
   .top-bar {

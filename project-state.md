@@ -2,9 +2,9 @@
 
 Living snapshot of Synesthesia Garden. Update this file at the start of a session (if the repo moved) and at the end of any phase or sizable change.
 
-**Last reviewed:** 2026-08-19  
+**Last reviewed:** 2026-08-21 (chrome palette from Figma 13:89)  
 **Active phase:** none (Phases 1–4 done)  
-**Next recommended work:** [Phase 5 — Keep what grew](./ROADMAP.md#phase-5--keep-what-grew)
+**Next recommended work:** [Phase 5 — Replay bloom as chime](./ROADMAP.md#phase-5--replay-bloom-as-chime)
 
 Plan and acceptance criteria: [`ROADMAP.md`](./ROADMAP.md)
 
@@ -24,7 +24,7 @@ Shipped loop: **Speaker or Music → Listen → flowers; pause → grass in gaps
 | --- | --- |
 | Mic pitch garden | **Shipped** — Listen / Stop / Clear |
 | Speaker vs Music listen | **Shipped** — top-bar toggle; Music uses `getDisplayMedia` + Share audio |
-| Pitch → kind + hue | **Shipped** — log2 80–1000 Hz |
+| Pitch → kind + hue | **Shipped** — log2 80–1000 Hz (Speaker); 50–4000 Hz (Music) |
 | Loudness → stem + bloom | **Shipped** — log RMS, AGC off |
 | Timbre → kind nudge + contrast | **Shipped** — spectral centroid |
 | Rhythm → sway / petal-open | **Shipped** — garden-level onset pulse; grass rustles on hits |
@@ -34,7 +34,7 @@ Shipped loop: **Speaker or Music → Listen → flowers; pause → grass in gaps
 | Section energy → depth | **Shipped** — quiet front, loud/chorus back |
 | Tempo → spawn rate | **Shipped** — BPM from inter-onset intervals; cooldown 105–480 ms |
 | Full-page meadow | **Shipped** — 320×200 logical, canvas fills leftover viewport |
-| Organic placement | **Shipped** — same-pitch clusters + jitter |
+| Organic placement | **Shipped** — even fill of empty cells in each patch |
 | Lifecycle | **Shipped** — seed → bloom → rest; oldest wilt instead of splice |
 | Listen-time sky | **Shipped** — sky/mist shift over ~9 min of listening |
 | Local file / song playback | **Deferred** — `SongPlayer` + CSS exist, not in `main.ts` (see Later) |
@@ -52,17 +52,17 @@ UI in `src/main.ts` is a full-page meadow with two listen sources (one at a time
 
 - **Top bar** — Listen, Stop, Clear garden, **Speaker | Music**, pitch meter
 - **Speaker** (default) — `getUserMedia`, echo cancellation / noise suppression on, **AGC off**, vocal 80–1000 Hz
-- **Music** — `getDisplayMedia` with audio required; video track muted/ignored; echo cancel / noise suppress / AGC **off**; wider pitch window (50–2000 Hz) for planting; `pitchNorm` still 80–1000 Hz. Capture is **not** played through the garden (no double audio)
+- **Music** — `getDisplayMedia` with audio required; video track muted/ignored; echo cancel / noise suppress / AGC **off**; pitch window **50–4000 Hz** for planting *and* `pitchNorm` (so high instruments are not all clamped to the top bed). Capture is **not** played through the garden (no double audio)
 - **Listen / Stop** — uses the selected mode; switching mode while listening stops the current stream, then starts the new one
 - **Clear garden** — instant reset of plants (listen-time sky keeps going)
-- **Pixel garden** — 320×200 logical, integer scale to leftover viewport, seven flower kinds, swaying grass, blocky clouds, Nouveau window chrome
+- **Pixel garden** — 320×200 logical, integer scale to leftover viewport; **2×4** timber patches (`f0`–`f3` front / `b0`–`b3` back), pitch left→right then front→back; seven flower kinds, swaying grass; green vine frame and Figma chrome
 
 Pitch pipeline (`src/audio/pitch.ts`):
 
 - Autocorrelation + parabolic interpolation
 - Speaker: plant if RMS ≥ `0.012` and Hz in 80–1000
-- Music: plant if RMS ≥ `0.008` and Hz in 50–2000 (`isVoice` is the plant gate for both)
-- `pitchNorm` is **log2** 80–1000 Hz (drives kind walk + hue; clamps outside)
+- Music: plant if RMS ≥ `0.008` and Hz in 50–4000 (`isVoice` is the plant gate for both)
+- `pitchNorm` is **log2** 80–1000 Hz in Speaker, **50–4000 Hz** in Music (drives kind walk + hue + beds; clamps outside)
 - `loudnessT` log-maps RMS from the mode’s silence floor to ~0.25
 - `timbreT` log-maps spectral centroid ~200–4000 Hz
 - Onset via spectral flux and positive d(RMS)/dt (~120 ms refractory)
@@ -76,7 +76,7 @@ Garden (`src/garden/world.ts`):
 - Stem ~5–14 logical px × grow envelope; quiet = compact bloom, loud = full petals
 - Bright timbre raises petal contrast; onsets add ~200 ms extra sway + petal-open; grass rustles on the same pulse
 - Grass after ~360 ms accumulated pause, using **real frame delta**
-- Placement: same-pitch clusters + jitter; **x** from duration (staccato left, long right) **and** pan; **y** from section energy (quiet nearer the viewer, loud toward the back / denser mid-bed)
+- Placement: empty soil cells across the whole patch, preferring spots farthest from plants already in the bed (no same-pitch clumps)
 - Grass prefers empty neighbor cells
 - Cap ~560 living plants; oldest **wilt/fade** (~2.6 s) instead of hard splice
 - Lifecycle: seed (~0.8 s) → bloom (~12 s) → rest (droop) → wilt when over cap
@@ -124,7 +124,7 @@ Done. Leftovers / honest limits:
 
 ### Phase 3 — Garden feel
 
-Done. Leftover: soil speckles still redraw every frame (Phase 6); loudness/timbre meters left the HUD when the top bar took pitch only.
+Done. Leftover: soil speckles still redraw every frame (Phase 7); loudness/timbre meters left the HUD when the top bar took pitch only.
 
 ### Phase 4 — Music mix layout
 
@@ -135,24 +135,29 @@ Done. Leftovers / honest limits:
 - BPM is folded into ~58–188; noisy onset storms cannot drop cooldown below 105 ms
 - No verse/chorus labels — section energy is smoothed loudness only
 
-### Phase 5 — Keep
+### Phase 5 — Replay bloom as chime
+
+- Flowers store `hz` / `pitchT` / `timbreT` but do not play them back
+- No canvas hit-test, hover, or tap chime
+
+### Phase 6 — Keep
 
 - No PNG, seed, or clip
 
-### Phase 6 — Perf
+### Phase 7 — Perf
 
 - Soil speckles: per-pixel `fillRect` every frame (~320 × 112)
 - Plants copy-sorted by `y` every frame
 - Naive autocorrelation on fftSize 2048 every frame
 
-### Phase 7 — Teach / a11y
+### Phase 8 — Teach / a11y
 
 - HUD shows pitch only; no legend or note name
 - Listen has no `aria-pressed`; no keyboard shortcuts (mode toggle does use `aria-pressed`)
 - No `prefers-reduced-motion`
 - Google Fonts CDN in `src/style.css`
 
-### Phase 8 — Hygiene
+### Phase 9 — Hygiene
 
 - `tsconfig.json` `include` is `["src"]` — `api/` and Vite plugins are not in `npm run build` typecheck
 - README still describes the old centered layout, not the full-page meadow
@@ -168,10 +173,11 @@ Done. Leftovers / honest limits:
 | 2 | Music mode vs Speaker mode | Done |
 | 3 | Organic garden + lifecycle | Done |
 | 4 | Music mix → garden layout | Done |
-| 5 | Keep what grew (PNG / share) | Not started |
-| 6 | Canvas + pitch performance | Not started |
-| 7 | Teach the mapping + a11y | Not started |
-| 8 | Engineering hygiene | Not started |
+| 5 | Replay bloom as chime | Not started |
+| 6 | Keep what grew (PNG / share) | Not started |
+| 7 | Canvas + pitch performance | Not started |
+| 8 | Teach the mapping + a11y | Not started |
+| 9 | Engineering hygiene | Not started |
 | — | Spotify / Qobuz | Deferred (code retained) |
 
 ---
@@ -187,7 +193,7 @@ src/audio/qobuzUrl.ts       Unused by UI
 src/garden/world.ts         Clusters, mix-layout x/y, tempo cooldown, gap grass, lifecycle
 src/garden/renderer.ts      Full-scene draw; listen-time sky
 src/garden/sprites.ts       Pixel flowers / grass (life + wilt)
-src/garden/palette.ts       Nouveau colors + pitch hue + sky watch
+src/garden/palette.ts       GROUND + ACCENTS (Figma lace/planter) + pitch hue + sky watch
 api/                        Vercel functions (hidden features)
 vite-plugin-*-api.ts        Dev stubs for those APIs
 ```

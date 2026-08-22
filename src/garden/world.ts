@@ -1,4 +1,4 @@
-import { pitchNorm, type PitchSample } from '../audio/pitch'
+import { type PitchSample } from '../audio/pitch'
 import {
   GARDEN_BEDS,
   bedById,
@@ -50,8 +50,6 @@ const PAUSE_GRASS_MS = 360
 const MAX_LIVING = 560
 const CELL_W = 8
 const CELL_H = 7
-const PITCH_KIN = 0.12
-const CLUSTER_RADIUS = 26
 
 export const SEED_MS = 800
 export const BLOOM_MS = 12_000
@@ -70,7 +68,7 @@ export class Garden {
   private pauseAccum = 0
   private lastTick = 0
   private frameDt = 16
-  private lastBedId: BedId = 'bl'
+  private lastBedId: BedId = 'f0'
   private grassBedCursor = 0
 
   constructor(config: GardenConfig) {
@@ -169,77 +167,43 @@ export class Garden {
     }
   }
 
-  /** Place in the pitch's patch; cluster same-pitch blooms; duration + pan + energy bias inside the bed. */
-  private placeFlower(
-    bed: GardenBed,
-    pitchT: number,
-    durationT: number,
-    panT: number,
-    energyT: number,
-  ): { x: number; y: number } {
+  /** Place on an empty soil cell, preferring spots farthest from plants already in the bed. */
+  private placeFlower(bed: GardenBed): { x: number; y: number } {
     const occ = this.occupied()
-    const target = this.layoutTarget(bed, durationT, panT, energyT)
-    const kin = this.plants.filter(
-      (p): p is Extract<Plant, { type: 'flower' }> =>
-        p.type === 'flower' &&
-        p.bedId === bed.id &&
-        p.wiltStarted === null &&
-        Math.abs(p.pitchT - pitchT) < PITCH_KIN,
-    )
+    const b = soilRect(bed)
+    const cols = bedCols(bed, CELL_W)
+    const rows = bedRows(bed, CELL_H)
+    const inBed = this.plants.filter((p) => p.bedId === bed.id && p.wiltStarted === null)
+    const empty: Array<{ x: number; y: number; spread: number }> = []
 
-    const tryPos = (x: number, y: number): { x: number; y: number } | null => {
-      const p = this.clampPos(bed, x, y)
-      if (occ.has(this.cellKey(bed.id, p.x, p.y))) return null
-      return p
-    }
-
-    if (kin.length > 0) {
-      const anchor = kin[Math.floor(Math.random() * kin.length)]!
-      const pull = 0.3
-      const ax = anchor.x * (1 - pull) + target.x * pull
-      const ay = anchor.y * (1 - pull) + target.y * pull
-      for (let n = 0; n < 14; n++) {
-        const ang = Math.random() * Math.PI * 2
-        const dist = 5 + Math.random() * CLUSTER_RADIUS
-        const hit = tryPos(
-          ax + Math.cos(ang) * dist + (Math.random() * 10 - 5),
-          ay + Math.sin(ang) * dist * 0.55 + (Math.random() * 8 - 4),
-        )
-        if (hit) return hit
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < cols; col++) {
+        const x = b.x0 + col * CELL_W + (Math.random() * 4 - 2)
+        const y = b.y0 + row * CELL_H + (Math.random() * 4 - 2)
+        const pos = this.clampPos(bed, x, y)
+        if (occ.has(this.cellKey(bed.id, pos.x, pos.y))) continue
+        let nearest = 96
+        for (const p of inBed) {
+          const d = Math.hypot(p.x - pos.x, p.y - pos.y)
+          if (d < nearest) nearest = d
+        }
+        empty.push({ ...pos, spread: nearest })
       }
     }
 
-    const yJitter = (1 - energyT * 0.55) * 18
-    for (let n = 0; n < 16; n++) {
-      const hit = tryPos(
-        target.x + (Math.random() * 28 - 14),
-        target.y + (Math.random() * 2 - 1) * yJitter,
+    if (empty.length === 0) {
+      return this.clampPos(
+        bed,
+        b.x0 + Math.random() * (b.x1 - b.x0),
+        b.y0 + Math.random() * (b.y1 - b.y0),
       )
-      if (hit) return hit
     }
 
-    const b = soilRect(bed)
-    return this.clampPos(
-      bed,
-      b.x0 + Math.random() * (b.x1 - b.x0),
-      b.y0 + Math.random() * (b.y1 - b.y0),
-    )
-  }
-
-  /** Short/staccato left, long right; pan left/right; quiet front of bed, loud toward back. */
-  private layoutTarget(
-    bed: GardenBed,
-    durationT: number,
-    panT: number,
-    energyT: number,
-  ): { x: number; y: number } {
-    const b = soilRect(bed)
-    const xT = clamp(0.5 + (durationT - 0.5) * 0.36 + (panT - 0.5) * 0.44, 0.08, 0.92)
-    const yT = 0.78 - energyT * 0.58
-    return {
-      x: b.x0 + (b.x1 - b.x0) * xT,
-      y: b.y0 + (b.y1 - b.y0) * yT,
-    }
+    empty.sort((a, c) => c.spread - a.spread)
+    const roomiest = empty[0]!.spread
+    const spacious = empty.filter((c) => c.spread >= roomiest * 0.7)
+    const pool = spacious.length > 0 ? spacious : empty
+    return pool[Math.floor(Math.random() * pool.length)]!
   }
 
   /** Grass fills empty cells in a patch, preferring gaps beside existing plants. */
@@ -279,18 +243,12 @@ export class Garden {
 
   private spawnFlower(sample: PitchSample, now: number): void {
     const hz = sample.hz!
-    const pitchT = pitchNorm(hz)
+    const pitchT = sample.pitchT
     const bed = bedFromPitch(pitchT)
     this.lastBedId = bed.id
     const kind = kindFromPitch(pitchT, sample.timbreT)
     const hueIndex = Math.floor(pitchT * FLOWER_BASE_HUES.length) % FLOWER_BASE_HUES.length
-    const { x, y } = this.placeFlower(
-      bed,
-      pitchT,
-      durationTFromMs(sample.durationMs),
-      sample.panT,
-      sample.sectionEnergyT,
-    )
+    const { x, y } = this.placeFlower(bed)
     this.plants.push({
       type: 'flower',
       x,
@@ -358,10 +316,6 @@ export function plantLife(plant: Plant, now: number): PlantLifeState {
 
 function spawnCooldownMs(spawnScale: number): number {
   return clamp(Math.round(SPAWN_COOLDOWN_MS * spawnScale), 105, 480)
-}
-
-function durationTFromMs(ms: number): number {
-  return clamp((ms - 60) / 1400, 0, 1)
 }
 
 function neighborCount(

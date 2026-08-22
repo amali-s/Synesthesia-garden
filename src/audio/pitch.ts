@@ -2,9 +2,9 @@
 export const VOCAL_MIN_HZ = 80
 export const VOCAL_MAX_HZ = 1000
 
-/** Wider window for a music mix (instruments + voice). pitchNorm still uses vocal range. */
+/** Wider window for a music mix (bass through piccolo / piano top). */
 export const MUSIC_MIN_HZ = 50
-export const MUSIC_MAX_HZ = 2000
+export const MUSIC_MAX_HZ = 4000
 
 /** Below this RMS, treat as pause / silence */
 export const SILENCE_THRESHOLD = 0.012
@@ -23,6 +23,8 @@ export type ListenMode = 'speaker' | 'music'
 
 export type PitchSample = {
   hz: number | null
+  /** 0–1 log map in the current mode’s Hz window (vocal vs music). 0 if no pitch. */
+  pitchT: number
   rms: number
   /** Plantable pitch in the current mode’s window (voice for Speaker, mix pitch for Music) */
   isVoice: boolean
@@ -305,6 +307,7 @@ export class PitchDetector {
       this.lastPitchedHz = null
       return {
         hz: null,
+        pitchT: 0,
         rms,
         isVoice: false,
         loudnessT: 0,
@@ -318,7 +321,7 @@ export class PitchDetector {
       }
     }
 
-    const music = this.kind === 'display'
+    const music = this.kind === 'display' || this.kind === 'media'
     const minHz = music ? MUSIC_MIN_HZ : VOCAL_MIN_HZ
     const maxHz = music ? MUSIC_MAX_HZ : VOCAL_MAX_HZ
     const pitched = detectPitchHz(this.buf, this.ctx.sampleRate, minHz, maxHz)
@@ -351,8 +354,11 @@ export class PitchDetector {
       this.pitchedSince >= 0 ? (now - this.pitchedSince) * 1000 : 0
 
     const isVoice = hz !== null && !percussive
+    const pitchT =
+      hz === null ? 0 : pitchNorm(hz, music ? 'music' : 'speaker')
     return {
       hz,
+      pitchT,
       rms,
       isVoice,
       loudnessT,
@@ -661,8 +667,9 @@ function logNorm(value: number, min: number, max: number): number {
   return Math.log(value / min) / Math.log(max / min)
 }
 
-/** Map Hz into 0–1 on a log2 (equal-temperament) scale — vocal range, clamped outside it */
-export function pitchNorm(hz: number): number {
+/** Map Hz into 0–1 on a log2 (equal-temperament) scale for the listen mode’s window. */
+export function pitchNorm(hz: number, mode: ListenMode = 'speaker'): number {
+  if (mode === 'music') return logNorm(hz, MUSIC_MIN_HZ, MUSIC_MAX_HZ)
   return logNorm(hz, VOCAL_MIN_HZ, VOCAL_MAX_HZ)
 }
 

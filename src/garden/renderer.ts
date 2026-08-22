@@ -1,5 +1,5 @@
 import { GARDEN_BEDS, bedsBackToFront, type GardenBed } from './beds'
-import { GROUND } from './palette'
+import { ACCENTS, GROUND } from './palette'
 import { drawFlower, drawGrass } from './sprites'
 import { plantLife, type Garden, type Plant } from './world'
 
@@ -154,13 +154,22 @@ export class GardenRenderer {
     this.fillRect(ox + 1, oy + 1, ow - 2, oh - d - 1, GROUND.timber)
     this.fillRect(ox, oy, ow, 1, GROUND.timberLite)
     this.fillRect(ox, oy, 1, oh, GROUND.timberLite)
-    this.fillRect(ox + ow - 1, oy, 1, oh, GROUND.timberShadow)
-    this.fillRect(ox, oy + oh - d, ow, d, GROUND.timberDark)
-    this.fillRect(ox, oy + oh - 1, ow, 1, GROUND.timberShadow)
-    this.fillPx(ox + 2, oy + 2, GROUND.patina)
-    this.fillPx(ox + ow - 3, oy + 2, GROUND.patina)
-    this.fillPx(ox + 2, oy + oh - d - 2, GROUND.patina)
-    this.fillPx(ox + ow - 3, oy + oh - d - 2, GROUND.patina)
+    this.fillRect(ox, oy + oh - d, ow, d, ACCENTS.planterLedge)
+
+    this.fillRect(ox, oy, ow, 1, ACCENTS.planterStroke)
+    this.fillRect(ox, oy, 1, oh, ACCENTS.planterStroke)
+    this.fillRect(ox + ow - 1, oy, 1, oh, ACCENTS.planterStroke)
+    this.fillRect(ox, oy + oh - 1, ow, 1, ACCENTS.planterStroke)
+    this.fillRect(ox, oy + oh - d, ow, 1, ACCENTS.planterStroke)
+
+    this.fillPx(ox + 2, oy + 2, GROUND.brass)
+    this.fillPx(ox + ow - 3, oy + 2, GROUND.brass)
+    this.fillPx(ox + 2, oy + oh - d - 2, GROUND.brass)
+    this.fillPx(ox + ow - 3, oy + oh - d - 2, GROUND.brass)
+    this.fillPx(ox + 3, oy + 2, ACCENTS.rivetStroke)
+    this.fillPx(ox + ow - 2, oy + 2, ACCENTS.rivetStroke)
+    this.fillPx(ox + 3, oy + oh - d - 2, ACCENTS.rivetStroke)
+    this.fillPx(ox + ow - 2, oy + oh - d - 2, ACCENTS.rivetStroke)
 
     const sx = ox + t
     const sy = oy + t
@@ -174,5 +183,9 @@ export class GardenRenderer {
         else if (n === 8) this.fillPx(x, y, GROUND.bedSoilLight)
       }
     }
+    this.fillRect(sx, sy, sw, 1, ACCENTS.soilOutline)
+    this.fillRect(sx, sy + sh - 1, sw, 1, ACCENTS.soilOutline)
+    this.fillRect(sx, sy, 1, sh, ACCENTS.soilOutline)
+    this.fillRect(sx + sw - 1, sy, 1, sh, ACCENTS.soilOutline)
   }
 }

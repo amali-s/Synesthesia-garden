@@ -117,7 +117,7 @@ function setListeningUi(on: boolean): void {
 
 function updateHud(hz: number | null, planted: boolean): void {
   if (hz !== null && planted) {
-    const t = pitchNorm(hz)
+    const t = pitchNorm(hz, listenMode)
     pitchFill.style.width = `${Math.round(t * 100)}%`
     pitchFill.style.background = `hsl(${(350 + t * 42) % 360} ${28 + t * 44}% ${62}%)`
     pitchHz.textContent = `${Math.round(hz)} Hz`
@@ -227,7 +227,7 @@ function frame(now: number): void {
     if (sample.isVoice && sample.hz !== null) {
       smoothedHz =
         smoothedHz === null ? sample.hz : smoothedHz * 0.7 + sample.hz * 0.3
-      livePitchT = pitchNorm(smoothedHz)
+      livePitchT = pitchNorm(smoothedHz, listenMode)
       updateHud(smoothedHz, true)
       setStatus(`Blooming · ${Math.round(smoothedHz)} Hz`)
     } else {
