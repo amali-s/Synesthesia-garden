@@ -71,7 +71,7 @@ A pixel meadow that *feels* like synesthesia: several qualities of sound (pitch,
 
 | Work | Intent |
 | --- | --- |
-| Full-page meadow | Larger logical bed (~320×200); canvas fills leftover viewport; Listen, Stop, Clear garden + pitch meter on a top bar |
+| Full-page meadow | Larger logical bed (~320×200); canvas fills leftover viewport; Listen (Stop while capturing), Keep, Clear garden + pitch meter on a top bar |
 | Organic placement | Cluster same-pitch blooms; more jitter; grass fills gaps instead of taking the next slot |
 | Lifecycle | Seed → bloom → rest; wilt or fade oldest plants instead of hard-delete at 480 |
 | Time-of-day sky | Sky / mist shift with how long the session has been listening |
@@ -141,13 +141,14 @@ A pixel meadow that *feels* like synesthesia: several qualities of sound (pitch,
 
 | Work | Intent |
 | --- | --- |
-| Download PNG | Export the garden (optionally including the window frame) — the vine glass is already a postcard. |
+| One Listen / Stop control | Idle label **Listen**; while capturing, the same primary button reads **Stop**. No second green button. |
+| Download PNG | Export the vine window as a framed postcard (glass as on screen, not a raw 320×200 dump). Hide the courtyard caption when plants exist. |
 | Optional share URL / seed | Reopen a garden later |
 | Optional short clip | GIF or WebM of sway — only if PNG feels incomplete |
 
-**Done when:** One click yields an image someone can send. Clear garden still exists beside it.
+**Done when:** Listen and Stop are one primary control. One click on Keep yields a framed PNG someone can send. Clear garden still exists beside it.
 
-**Touches:** `src/garden/renderer.ts`, `src/main.ts`, `src/style.css`
+**Touches:** `src/garden/postcard.ts`, `src/main.ts`, `src/style.css`
 
 ---
 

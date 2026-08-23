@@ -10,6 +10,11 @@ import { BloomChime } from './audio/chime'
 import { Garden, type FlowerPlant } from './garden/world'
 import { GardenRenderer } from './garden/renderer'
 import { loadBloomArt } from './garden/bloomArt'
+import {
+  downloadBlob,
+  postcardFilename,
+  renderPostcardPng,
+} from './garden/postcard'
 
 const LOGICAL_W = 320
 const LOGICAL_H = 200
@@ -21,8 +26,8 @@ app.innerHTML = `
       <div class="top-bar__primary">
         <h1 class="logo">Synesthesia Garden</h1>
         <div class="controls">
-          <button type="button" class="btn primary" id="listen-btn">Listen</button>
-          <button type="button" class="btn" id="stop-btn" disabled>Stop</button>
+          <button type="button" class="btn primary" id="listen-btn" aria-pressed="false">Listen</button>
+          <button type="button" class="btn" id="keep-btn" aria-label="Save garden as PNG">Keep</button>
           <button type="button" class="btn" id="clear-btn">Clear garden</button>
           <div class="mode-toggle" role="group" aria-label="Listen source">
             <button type="button" class="mode-btn" id="mode-speaker" aria-pressed="true">Speaker</button>
@@ -53,13 +58,14 @@ app.innerHTML = `
 
 const canvas = document.querySelector<HTMLCanvasElement>('#garden')!
 const listenBtn = document.querySelector<HTMLButtonElement>('#listen-btn')!
-const stopBtn = document.querySelector<HTMLButtonElement>('#stop-btn')!
+const keepBtn = document.querySelector<HTMLButtonElement>('#keep-btn')!
 const clearBtn = document.querySelector<HTMLButtonElement>('#clear-btn')!
 const modeSpeakerBtn = document.querySelector<HTMLButtonElement>('#mode-speaker')!
 const modeMusicBtn = document.querySelector<HTMLButtonElement>('#mode-music')!
 const pitchFill = document.querySelector<HTMLDivElement>('#pitch-fill')!
 const pitchHz = document.querySelector<HTMLSpanElement>('#pitch-hz')!
 const statusEl = document.querySelector<HTMLDivElement>('#status')!
+const windowFrame = document.querySelector<HTMLDivElement>('.window-frame')!
 const glass = document.querySelector<HTMLDivElement>('.window-frame__glass')!
 const courtyardCaption = document.querySelector<HTMLParagraphElement>('#courtyard-caption')!
 
@@ -138,10 +144,11 @@ function syncModeButtons(): void {
   modeMusicBtn.setAttribute('aria-pressed', speaker ? 'false' : 'true')
 }
 
-function setListeningUi(on: boolean): void {
+function setListeningUi(on: boolean, pending = false): void {
+  listenBtn.disabled = pending
+  listenBtn.textContent = on ? 'Stop' : 'Listen'
+  listenBtn.setAttribute('aria-pressed', on ? 'true' : 'false')
   listenBtn.classList.toggle('active', on)
-  listenBtn.disabled = on
-  stopBtn.disabled = !on
 }
 
 function updateHud(hz: number | null, planted: boolean): void {
@@ -178,7 +185,7 @@ function stopListen(status?: string): void {
 async function startListen(): Promise<void> {
   if (listening) return
   try {
-    listenBtn.disabled = true
+    setListeningUi(false, true)
     setStatus(
       listenMode === 'music'
         ? 'Share a tab or window — tick “Share audio”'
@@ -213,6 +220,29 @@ function applyMode(next: ListenMode): void {
   setStatus(idleStatus())
 }
 
+async function keepPostcard(): Promise<void> {
+  if (keepBtn.disabled) return
+  keepBtn.disabled = true
+  try {
+    const blob = await renderPostcardPng({
+      frameEl: windowFrame,
+      gardenCanvas: canvas,
+      captionEl: courtyardCaption,
+      showCaption: garden.plants.length === 0,
+    })
+    downloadBlob(blob, postcardFilename())
+    setStatus(
+      garden.plants.length === 0
+        ? 'Kept the empty courtyard'
+        : 'Kept a postcard of the garden',
+    )
+  } catch {
+    setStatus('Could not save the postcard — try again')
+  } finally {
+    keepBtn.disabled = false
+  }
+}
+
 detector.onCaptureEnded = () => {
   listening = false
   resetLivePitch()
@@ -221,11 +251,15 @@ detector.onCaptureEnded = () => {
 }
 
 listenBtn.addEventListener('click', () => {
+  if (listening) {
+    stopListen()
+    return
+  }
   void startListen()
 })
 
-stopBtn.addEventListener('click', () => {
-  stopListen()
+keepBtn.addEventListener('click', () => {
+  void keepPostcard()
 })
 
 clearBtn.addEventListener('click', () => {

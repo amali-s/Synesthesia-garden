@@ -2,9 +2,9 @@
 
 Living snapshot of Synesthesia Garden. Update this file at the start of a session (if the repo moved) and at the end of any phase or sizable change.
 
-**Last reviewed:** 2026-08-23 (demote Speaker | Music chrome)  
-**Active phase:** none (Phases 1–5 done; Phase 2 leftover done)  
-**Next recommended work:** [Phase 6 — Keep](./ROADMAP.md#phase-6--keep-what-grew)
+**Last reviewed:** 2026-08-23 (Phase 6 Keep)  
+**Active phase:** none (Phases 1–6 done)  
+**Next recommended work:** [Phase 7 — Canvas + pitch performance](./ROADMAP.md#phase-7--canvas--pitch-performance)
 
 Plan and acceptance criteria: [`ROADMAP.md`](./ROADMAP.md)
 
@@ -14,7 +14,7 @@ Plan and acceptance criteria: [`ROADMAP.md`](./ROADMAP.md)
 
 A pixel-art meadow that grows from **voice or music already playing on the device**: pitch, loudness, timbre, and rhythm become kind, hue, size, and motion. Speaker mode uses the microphone; Music mode captures tab/window/system audio. Autocorrelation pitch detector; flowers from pitched sound, grass from quiet. Art Nouveau frame and palette (Mucha / Tiffany jewel tones).
 
-Shipped loop: **Speaker or Music → Listen → flowers; pause → grass in gaps; Stop; hover/tap a bloom to hear its pitch; Clear garden.**
+Shipped loop: **Speaker or Music → Listen → flowers; pause → grass in gaps; Stop (same button); hover/tap a bloom to hear its pitch; Keep a framed PNG; Clear garden.**
 
 ---
 
@@ -22,7 +22,7 @@ Shipped loop: **Speaker or Music → Listen → flowers; pause → grass in gaps
 
 | Area | Status |
 | --- | --- |
-| Mic pitch garden | **Shipped** — Listen / Stop / Clear |
+| Mic pitch garden | **Shipped** — Listen / Stop on one primary button; Keep; Clear |
 | Speaker vs Music listen | **Shipped** — segmented cream/brass toggle; Music uses `getDisplayMedia` + Share audio; only Listen is filled green |
 | Pitch → patch; chroma + timbre → kind/hue | **Shipped** — log2 80–1000 Hz (Speaker); 50–4000 Hz (Music) |
 | Loudness → stem + bloom | **Shipped** — log RMS, AGC off |
@@ -38,10 +38,11 @@ Shipped loop: **Speaker or Music → Listen → flowers; pause → grass in gaps
 | Organic placement | **Shipped** — even fill of empty cells in each patch |
 | Lifecycle | **Shipped** — seed → bloom → rest; oldest wilt instead of splice |
 | Listen-time sky | **Shipped** — low-opacity hour gel on the canvas (cool → bright → warm; Pause holds; Clear keeps the clock) |
+| Postcard PNG | **Shipped** — Keep downloads a framed vine-glass PNG (`synesthesia-garden-YYYY-MM-DD.png`); empty courtyard keeps the caption; plants hide it |
 | Local file / song playback | **Deferred** — `SongPlayer` + CSS exist, not in `main.ts` (see Later) |
 | Spotify previews | **Hidden** — API + Vite plugin exist; UI gone |
 | Qobuz streaming | **Hidden / deferred** — API + Vite plugin exist; UI gone |
-| Export / share | **Not started** |
+| Export / share | **PNG shipped** — share URL/seed and GIF/WebM not started (optional) |
 | Tests | **None** |
 | Deploy | GitHub Pages (`base: /Synesthesia-garden/`) or Vercel (`VERCEL` → `/`) |
 
@@ -51,11 +52,12 @@ Shipped loop: **Speaker or Music → Listen → flowers; pause → grass in gaps
 
 UI in `src/main.ts` is a full-page meadow with two listen sources (one at a time):
 
-- **Top bar** — Listen, Stop, Clear garden, **Speaker | Music**, pitch meter
+- **Top bar** — Listen (Stop while capturing), Keep, Clear garden, **Speaker | Music**, pitch meter
 - **Speaker** (default) — `getUserMedia`, echo cancellation / noise suppression on, **AGC off**, vocal 80–1000 Hz
 - **Music** — `getDisplayMedia` with audio required; video track muted/ignored; echo cancel / noise suppress / AGC **off**; pitch window **50–4000 Hz** for planting *and* `pitchNorm` (so high instruments are not all clamped to the top bed). Capture is **not** played through the garden (no double audio)
-- **Listen / Stop** — uses the selected mode; switching mode while listening stops the current stream, then starts the new one
-- **Clear garden** — instant reset of plants (listen-time sky keeps going)
+- **Listen / Stop** — one `#listen-btn` (`.btn.primary`, `aria-pressed` while capturing). Idle label **Listen** starts the selected mode; while listening the same button reads **Stop**. Disabled only during the mic/share permission wait. Switching mode while listening stops the current stream, then starts the new one. Share-ended and capture errors return the button to Listen.
+- **Keep** — one-click PNG of the vine window + glass (CSS frame composited around the live canvas). Caption “A courtyard at rest” is included only when the bed is empty. Filename `synesthesia-garden-YYYY-MM-DD.png`.
+- **Clear garden** — instant reset of plants (listen-time sky keeps going); separate from Keep
 - **Pixel garden** — 320×200 logical, integer backing scale; CSS fills the vine glass (square-pixel letterbox was tried, then dropped so the bed sits against the frame). **2×4** timber patches (`f0`–`f3` front / `b0`–`b3` back); empty visit shows gravel courtyard + “A courtyard at rest”; seven flower kinds; per-plant breeze + onset ripple; integer bloom dest sizes; green vine frame and Figma chrome
 - **Bloom chime** — hover a flower (mouse/pen) or tap (touch) plays a short sine/bell at that plant’s stored `hz`; click while hovering chimes again; one hover-chime until the pointer leaves; grass and empty soil are silent; wilted blooms still chime while on screen. Uses the same AudioContext as Listen, routed to destination (not the analyser). `BloomChime.muted` is the later reduced-motion gate; it is not wired yet.
 
@@ -95,6 +97,8 @@ Music path (2026-08-18): Speaker + Listen still mic-only; Music + Listen prompts
 Music layout (2026-08-19): stereo mix uses L/R tap (not played through the garden); Speaker / mono pan stays center; duration, tempo, and section energy apply in both modes.
 
 Bloom chime (2026-08-22): pointer maps canvas CSS box → backing store / `getScale()` → logical pixel. Flowers chime at stored `hz` (not the live mix); grass does not.
+
+Keep (2026-08-23): offscreen canvas composites the live meadow with a 9-slice of `vine-frame.svg` (same slice/round as CSS `border-image`). No extra dependency. Share URL and clip deferred.
 
 ---
 
@@ -164,7 +168,11 @@ Done. Leftovers / honest limits:
 
 ### Phase 6 — Keep
 
-- No PNG, seed, or clip (UI audit #16 — postcard of the glass)
+Done (PNG). Leftovers / optional:
+
+- No share URL / seed
+- No GIF / WebM clip
+- Postcard is a compositor (vine SVG 9-slice + live canvas), not an HTML screenshot — inner glass stroke is an approximation of `.window-frame::after`
 
 ### Phase 7 — Perf
 
@@ -179,9 +187,9 @@ UI audit #4, #5, #7, #8, #12, #15, #18:
 - HUD shows pitch only; no legend, note name, or bed compass
 - No hover inspect (kind + Hz close-up)
 - Idle status does not teach hover-to-chime
-- Listen has no `aria-pressed` or `:focus-visible`; no keyboard shortcuts (mode toggle does use `aria-pressed`)
+- Listen now has `aria-pressed`; still no `:focus-visible` or keyboard shortcuts (mode toggle does use `aria-pressed`)
 - No `prefers-reduced-motion`; `BloomChime.muted` unwired
-- Clear garden has the same visual weight as Listen
+- Clear garden has the same visual weight as Keep (cream/brass); Listen remains the only filled green
 
 ### Phase 9 — Hygiene
 
@@ -207,7 +215,7 @@ UI audit #4, #5, #7, #8, #12, #15, #18:
 | 3 | Organic garden + lifecycle | Done |
 | 4 | Music mix → garden layout | Done |
 | 5 | Replay bloom as chime | Done |
-| 6 | Keep what grew (PNG / share) | Not started |
+| 6 | Keep what grew (PNG / share) | Done (PNG; share URL and clip optional leftover) |
 | 7 | Canvas + pitch performance | Not started |
 | 8 | Teach the mapping + a11y | Not started |
 | 9 | Engineering hygiene | Not started |
@@ -218,7 +226,7 @@ UI audit #4, #5, #7, #8, #12, #15, #18:
 ## Layout (as of last review)
 
 ```
-src/main.ts                 UI + rAF loop (Speaker/Music top bar + meadow + bloom pointer)
+src/main.ts                 UI + rAF loop (Speaker/Music top bar + meadow + bloom pointer + Keep)
 src/audio/pitch.ts          Detector + mic / display capture + mix layout (pan, duration, tempo, drums)
 src/audio/chime.ts          Short bloom tone at stored hz (shared AudioContext)
 src/audio/songPlayer.ts     Unused by UI
@@ -226,6 +234,7 @@ src/audio/spotifyUrl.ts     Unused by UI
 src/audio/qobuzUrl.ts       Unused by UI
 src/garden/world.ts         Clusters, mix-layout x/y, tempo cooldown, gap grass, lifecycle, bloom hit-test
 src/garden/renderer.ts      Full-scene draw; gravel courtyard; hour gel; per-plant wind
+src/garden/postcard.ts      Framed PNG composite (vine 9-slice + glass)
 src/garden/sprites.ts       Pixel flowers / grass (life + wilt)
 src/garden/palette.ts       GROUND + ACCENTS + punchier bloom walk + hour gel
 api/                        Vercel functions (hidden features)
