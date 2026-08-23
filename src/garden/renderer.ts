@@ -1,5 +1,9 @@
-import { GARDEN_BEDS, bedsBackToFront, type GardenBed } from './beds'
-import { ACCENTS, GROUND } from './palette'
+import {
+  GARDEN_BEDS,
+  bedsBackToFront,
+  type GardenBed,
+} from './beds'
+import { ACCENTS, GROUND, hourTintForListenMs } from './palette'
 import { drawFlower, drawGrass } from './sprites'
 import { plantLife, type Garden, type Plant } from './world'
 
@@ -7,6 +11,9 @@ export type RendererOptions = {
   /** Screen pixels per logical pixel */
   scale: number
 }
+
+const ONSET_RIPPLE_MS = 140
+const ONSET_PULSE_MS = 200
 
 export class GardenRenderer {
   private canvas: HTMLCanvasElement
@@ -47,19 +54,15 @@ export class GardenRenderer {
   }
 
   draw(garden: Garden, now: number, livePitchT: number | null): void {
-    const { ctx, scale, logicalW, logicalH } = this
-    const sway = now / 700
-    this.drawPath(logicalW, logicalH)
-
-    const onsetPulse =
-      garden.lastOnset > 0 ? Math.max(0, 1 - (now - garden.lastOnset) / 200) : 0
+    const { ctx, scale, logicalW } = this
+    this.drawCourtyard()
 
     for (const bed of bedsBackToFront()) {
       this.drawBed(bed)
       const inBed = garden.plants.filter((p) => p.bedId === bed.id)
       inBed.sort((a, b) => a.y - b.y)
       for (const plant of inBed) {
-        this.drawPlant(plant, now, sway, onsetPulse)
+        this.drawPlant(plant, now, garden.lastOnset)
       }
     }
 
@@ -74,17 +77,17 @@ export class GardenRenderer {
       ctx.fillStyle = `hsl(${(350 + livePitchT * 42) % 360} ${28 + livePitchT * 44}% ${68 - livePitchT * 14}%)`
       ctx.fillRect((cx - size) * scale, (cy - size) * scale, size * 2 * scale, size * 2 * scale)
     }
+
+    this.drawHourGel(garden.listenMs)
   }
 
-  private drawPlant(
-    plant: Plant,
-    now: number,
-    sway: number,
-    onsetPulse: number,
-  ): void {
-    const { ctx, scale } = this
+  private drawPlant(plant: Plant, now: number, lastOnset: number): void {
+    const { ctx, scale, logicalW } = this
     const life = plantLife(plant, now)
     const age = (now - plant.born) / 1000
+    const variant = plant.type === 'grass' ? plant.variant : 0
+    const sway = plantSway(now, plant.x, plant.y, variant)
+    const onsetPulse = onsetRipple(now, lastOnset, plant.x, logicalW)
     if (plant.type === 'grass') {
       drawGrass(
         ctx,
@@ -92,7 +95,7 @@ export class GardenRenderer {
         plant.y,
         scale,
         plant.variant,
-        sway + plant.variant,
+        sway,
         life.grow,
         life.wiltT,
         onsetPulse,
@@ -107,7 +110,7 @@ export class GardenRenderer {
       plant.kind,
       plant.pitchT,
       age,
-      sway + plant.x * 0.1,
+      sway,
       plant.loudnessT,
       plant.timbreT,
       onsetPulse,
@@ -130,16 +133,29 @@ export class GardenRenderer {
     ctx.fillRect(x * scale, y * scale, w * scale, h * scale)
   }
 
-  private drawPath(logicalW: number, logicalH: number): void {
+  private drawCourtyard(): void {
+    const { logicalW, logicalH } = this
     this.fillRect(0, 0, logicalW, logicalH, GROUND.gravel)
     for (let y = 0; y < logicalH; y++) {
       for (let x = 0; x < logicalW; x++) {
+        if (inTimber(x, y)) continue
         const n = (x * 11 + y * 19) % 23
         if (n === 0) this.fillPx(x, y, GROUND.gravelDark)
         else if (n === 7) this.fillPx(x, y, GROUND.gravelLight)
         else if (n === 14) this.fillPx(x, y, GROUND.patina)
       }
     }
+  }
+
+  private drawHourGel(listenMs: number): void {
+    const { ctx, scale, logicalW, logicalH } = this
+    const hour = hourTintForListenMs(listenMs)
+    ctx.save()
+    ctx.globalAlpha = hour.alpha
+    ctx.fillStyle = hour.tint
+    ctx.fillRect(0, 0, logicalW * scale, logicalH * scale)
+    ctx.restore()
+    ctx.imageSmoothingEnabled = false
   }
 
   private drawBed(bed: GardenBed): void {
@@ -190,4 +206,34 @@ export class GardenRenderer {
     this.fillRect(sx, sy, 1, sh, ACCENTS.soilOutline)
     this.fillRect(sx + sw - 1, sy, 1, sh, ACCENTS.soilOutline)
   }
+}
+
+function inTimber(x: number, y: number): boolean {
+  for (const bed of GARDEN_BEDS) {
+    if (x >= bed.x && x < bed.x + bed.w && y >= bed.y && y < bed.y + bed.h) return true
+  }
+  return false
+}
+
+function windPhase(x: number, y: number, variant: number): number {
+  const n =
+    Math.imul(x | 0, 374761393) ^
+    Math.imul(y | 0, 668265263) ^
+    Math.imul(variant | 0, 1274126177)
+  return ((n >>> 0) % 6283) / 1000
+}
+
+function plantSway(now: number, x: number, y: number, variant: number): number {
+  const phase = windPhase(x, y, variant)
+  const breeze = now / 980 + phase
+  const gust = Math.sin(now / 340 + phase * 1.7) * 0.35
+  return breeze + gust
+}
+
+function onsetRipple(now: number, lastOnset: number, x: number, logicalW: number): number {
+  if (lastOnset <= 0) return 0
+  const delay = (x / Math.max(1, logicalW)) * ONSET_RIPPLE_MS
+  const local = now - lastOnset - delay
+  if (local < 0) return 0
+  return Math.max(0, 1 - local / ONSET_PULSE_MS)
 }

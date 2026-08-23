@@ -52,7 +52,7 @@ export function drawGrass(
   ctx.save()
   ctx.globalAlpha = 1 - wiltT * 0.85
   const tip = Math.round(
-    Math.sin(sway + variant) * (1.5 + onsetPulse * 2.2) * (1 - wiltT),
+    Math.sin(sway) * (1.5 + onsetPulse * 2.2) * (1 - wiltT),
   )
   const blades: Array<[number, number, number, number]> = [
     [0, 0, tip, Math.round((-6 - (variant % 3)) * height)],

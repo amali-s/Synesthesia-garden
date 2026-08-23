@@ -53,21 +53,20 @@ export const PASTEL = {
   mauve: '#9b7b9e',
 } as const
 
-/** Sky / mist over accumulated listen time (dawn → day → dusk). */
-export const SKY_WATCH: ReadonlyArray<{
+/** Hour gel over accumulated listen time (dawn → noon → dusk). */
+export const HOUR_WATCH: ReadonlyArray<{
   t: number
-  top: string
-  bottom: string
-  mist: string
+  tint: string
+  alpha: number
 }> = [
-  { t: 0, top: '#c9d6e2', bottom: '#edd6c8', mist: '#e4d4ce' },
-  { t: 0.22, top: '#b7cfc8', bottom: '#d9c8d4', mist: '#d4c4d0' },
-  { t: 0.55, top: '#9eb4c8', bottom: '#d4b6a4', mist: '#d8c4b8' },
-  { t: 0.82, top: '#7a88a8', bottom: '#c4878a', mist: '#c4a8b4' },
-  { t: 1, top: '#4a5878', bottom: '#8a6e82', mist: '#9a8898' },
+  { t: 0, tint: '#9BB4CC', alpha: 0.15 },
+  { t: 0.22, tint: '#D5E4DC', alpha: 0.09 },
+  { t: 0.5, tint: '#FFF4D6', alpha: 0.06 },
+  { t: 0.78, tint: '#E8B07A', alpha: 0.13 },
+  { t: 1, tint: '#C46B5A', alpha: 0.17 },
 ]
 
-/** Full listen-time sky shift, in ms (does not loop). */
+/** Full listen-time hour shift, in ms (does not loop). */
 export const SKY_LISTEN_MS = 9 * 60 * 1000
 
 function hexToRgb(hex: string): [number, number, number] {
@@ -79,7 +78,7 @@ function hexToRgb(hex: string): [number, number, number] {
   ]
 }
 
-function lerpHex(a: string, b: string, t: number): string {
+export function lerpHex(a: string, b: string, t: number): string {
   const [ar, ag, ab] = hexToRgb(a)
   const [br, bg, bb] = hexToRgb(b)
   const r = Math.round(ar + (br - ar) * t)
@@ -88,22 +87,17 @@ function lerpHex(a: string, b: string, t: number): string {
   return `rgb(${r} ${g} ${bl})`
 }
 
-export function skyForListenMs(listenMs: number): {
-  top: string
-  bottom: string
-  mist: string
-} {
+export function hourTintForListenMs(listenMs: number): { tint: string; alpha: number } {
   const t = Math.min(1, Math.max(0, listenMs / SKY_LISTEN_MS))
   let i = 0
-  while (i < SKY_WATCH.length - 2 && t > SKY_WATCH[i + 1]!.t) i++
-  const a = SKY_WATCH[i]!
-  const b = SKY_WATCH[i + 1]!
+  while (i < HOUR_WATCH.length - 2 && t > HOUR_WATCH[i + 1]!.t) i++
+  const a = HOUR_WATCH[i]!
+  const b = HOUR_WATCH[i + 1]!
   const span = b.t - a.t || 1
   const u = (t - a.t) / span
   return {
-    top: lerpHex(a.top, b.top, u),
-    bottom: lerpHex(a.bottom, b.bottom, u),
-    mist: lerpHex(a.mist, b.mist, u),
+    tint: lerpHex(a.tint, b.tint, u),
+    alpha: a.alpha + (b.alpha - a.alpha) * u,
   }
 }
 
@@ -112,31 +106,36 @@ export function skyForListenMs(listenMs: number): {
  * no free HSL hue walk, which was drifting into extra reds and greens.
  */
 export const BLOOM_HEX = {
-  lilac: '#B6A9C9',
-  lilacMist: '#E9E1F2',
-  slate: '#5A6B7A',
-  terracotta: '#B0563C',
-  coral: '#D98962',
-  gold: '#D7B46A',
-  teal: '#1F5C5A',
-  plum: '#5A2E5C',
-  rose: '#A25D7C',
-  amber: '#D7A13A',
+  lilac: '#A898D4',
+  lilacMist: '#F3ECFF',
+  slate: '#4A6A88',
+  ice: '#7EB8D4',
+  sage: '#5A9A6E',
+  terracotta: '#C44A28',
+  coral: '#F07848',
+  gold: '#F0C45A',
+  butter: '#FFE8A0',
+  teal: '#1A6E6A',
+  plum: '#6A2470',
+  rose: '#C4406E',
+  amber: '#E89020',
   taupe: '#9C6B6A',
-  blush: '#E7B9B1',
+  blush: '#FFD4C8',
+  cream: '#FFF6E8',
 } as const
 
 /**
  * Parallel chroma walks (same note class).
  * Soft = low pitch / dull timbre; jewel = high pitch or bright timbre.
+ * Soft walk avoids stacking rose/blush/taupe so a patch does not read as one pink.
  */
 export const BLOOM_SOFT = [
   BLOOM_HEX.slate,
-  BLOOM_HEX.taupe,
+  BLOOM_HEX.sage,
+  BLOOM_HEX.ice,
+  BLOOM_HEX.butter,
   BLOOM_HEX.lilac,
   BLOOM_HEX.blush,
-  BLOOM_HEX.rose,
-  BLOOM_HEX.lilacMist,
 ] as const
 
 export const BLOOM_JEWEL = [
@@ -231,7 +230,12 @@ export function colorFromBloom(pcT: number, pitchT = 0.5, timbreT = 0.5): Hsl {
   const soft = chromaRgb(BLOOM_SOFT, pcT)
   const jewel = chromaRgb(BLOOM_JEWEL, pcT)
   const rgb = mixRgb(soft, jewel, jewelMix(pitchT, timbreT))
-  return rgbToHsl(rgb)
+  const hsl = rgbToHsl(rgb)
+  return {
+    h: hsl.h,
+    s: Math.min(82, hsl.s + 12),
+    l: Math.min(74, hsl.l + 3),
+  }
 }
 
 export function hueFromPitchClass(pcT: number): number {
@@ -243,22 +247,22 @@ export function bloomDeep(mid: Hsl, pitchT: number, timbreT: number): string {
   const shade = isWarmHue(mid.h)
     ? j > 0.45
       ? BLOOM_HEX.terracotta
-      : BLOOM_HEX.taupe
+      : BLOOM_HEX.slate
     : j > 0.45
       ? BLOOM_HEX.teal
       : BLOOM_HEX.slate
-  return hslCss(rgbToHsl(mixHex(hslToRgb(mid), shade, 0.22 + j * 0.2)))
+  return hslCss(rgbToHsl(mixHex(hslToRgb(mid), shade, 0.38 + j * 0.22)))
 }
 
 export function bloomLite(mid: Hsl, pitchT: number, timbreT: number): string {
   const j = jewelMix(pitchT, timbreT)
-  const tint = isWarmHue(mid.h) ? BLOOM_HEX.blush : BLOOM_HEX.lilacMist
-  return hslCss(rgbToHsl(mixHex(hslToRgb(mid), tint, 0.42 - j * 0.22)))
+  const tint = isWarmHue(mid.h) ? BLOOM_HEX.butter : BLOOM_HEX.ice
+  return hslCss(rgbToHsl(mixHex(hslToRgb(mid), tint, 0.5 - j * 0.12)))
 }
 
 export function bloomCenter(mid: Hsl): Hsl {
   const jewel = mid.s > 38 || mid.l < 48
-  return rgbToHsl(mixHex(hslToRgb(mid), jewel ? BLOOM_HEX.gold : BLOOM_HEX.blush, 0.42))
+  return rgbToHsl(mixHex(hslToRgb(mid), jewel ? BLOOM_HEX.gold : BLOOM_HEX.butter, 0.5))
 }
 
 export function bloomWilt(mid: Hsl, wiltT: number): Hsl {
@@ -277,15 +281,16 @@ export function bloomPaintRgb(
   const deepShade = isWarmHue(midH.h)
     ? j > 0.45
       ? BLOOM_HEX.terracotta
-      : BLOOM_HEX.taupe
+      : BLOOM_HEX.slate
     : j > 0.45
       ? BLOOM_HEX.teal
       : BLOOM_HEX.slate
-  const liteTint = isWarmHue(midH.h) ? BLOOM_HEX.blush : BLOOM_HEX.lilacMist
-  const mid = hslToRgb(midH)
-  let deep = mixHex(mid, deepShade, 0.22 + j * 0.2)
-  let lite = mixHex(mid, liteTint, 0.42 - j * 0.22)
-  let center = mixHex(mid, midH.s > 38 || midH.l < 48 ? BLOOM_HEX.gold : BLOOM_HEX.blush, 0.42)
+  const liteTint = isWarmHue(midH.h) ? BLOOM_HEX.butter : BLOOM_HEX.ice
+  let mid = hslToRgb(midH)
+  let deep = mixHex(mid, deepShade, 0.4 + j * 0.28)
+  let lite = mixHex(mid, liteTint, 0.52)
+  lite = mixHex(lite, BLOOM_HEX.cream, 0.22)
+  let center = mixHex(mid, midH.s > 38 || midH.l < 48 ? BLOOM_HEX.gold : BLOOM_HEX.butter, 0.55)
   if (wiltT > 0) {
     const taupe = hexToRgb(BLOOM_HEX.taupe)
     deep = mixRgb(deep, taupe, wiltT)

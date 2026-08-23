@@ -2,9 +2,9 @@
 
 Living snapshot of Synesthesia Garden. Update this file at the start of a session (if the repo moved) and at the end of any phase or sizable change.
 
-**Last reviewed:** 2026-08-22 (kind/hue uncoupled from patch)  
-**Active phase:** none (Phases 1–5 done)  
-**Next recommended work:** [Phase 6 — Keep what grew](./ROADMAP.md#phase-6--keep-what-grew)
+**Last reviewed:** 2026-08-22 (hour gel + punchier bloom paint)  
+**Active phase:** none (Phases 1–5 done; Phase 2 has a chrome leftover)  
+**Next recommended work:** [Phase 2 leftover](./ROADMAP.md#phase-2--music-mode-vs-speaker-mode) (demote Speaker), then [Phase 6 — Keep](./ROADMAP.md#phase-6--keep-what-grew)
 
 Plan and acceptance criteria: [`ROADMAP.md`](./ROADMAP.md)
 
@@ -27,7 +27,7 @@ Shipped loop: **Speaker or Music → Listen → flowers; pause → grass in gaps
 | Pitch → patch; chroma + timbre → kind/hue | **Shipped** — log2 80–1000 Hz (Speaker); 50–4000 Hz (Music) |
 | Loudness → stem + bloom | **Shipped** — log RMS, AGC off |
 | Timbre → kind (with chroma) + contrast | **Shipped** — spectral centroid |
-| Rhythm → sway / petal-open | **Shipped** — garden-level onset pulse; grass rustles on hits |
+| Rhythm → sway / petal-open | **Shipped** — per-plant breeze + gust; onset pulse ripples across `x`; grass rustles |
 | Silence → grass | **Shipped** — grass fills empty cells |
 | Percussion → motion only | **Shipped** — drum-like frames pulse, do not plant |
 | Duration + pan → side | **Shipped** — long vs staccato and L/R as combined x biases |
@@ -37,7 +37,7 @@ Shipped loop: **Speaker or Music → Listen → flowers; pause → grass in gaps
 | Full-page meadow | **Shipped** — 320×200 logical, canvas fills leftover viewport |
 | Organic placement | **Shipped** — even fill of empty cells in each patch |
 | Lifecycle | **Shipped** — seed → bloom → rest; oldest wilt instead of splice |
-| Listen-time sky | **Shipped** — sky/mist shift over ~9 min of listening |
+| Listen-time sky | **Shipped** — low-opacity hour gel on the canvas (cool → bright → warm; Pause holds; Clear keeps the clock) |
 | Local file / song playback | **Deferred** — `SongPlayer` + CSS exist, not in `main.ts` (see Later) |
 | Spotify previews | **Hidden** — API + Vite plugin exist; UI gone |
 | Qobuz streaming | **Hidden / deferred** — API + Vite plugin exist; UI gone |
@@ -56,7 +56,7 @@ UI in `src/main.ts` is a full-page meadow with two listen sources (one at a time
 - **Music** — `getDisplayMedia` with audio required; video track muted/ignored; echo cancel / noise suppress / AGC **off**; pitch window **50–4000 Hz** for planting *and* `pitchNorm` (so high instruments are not all clamped to the top bed). Capture is **not** played through the garden (no double audio)
 - **Listen / Stop** — uses the selected mode; switching mode while listening stops the current stream, then starts the new one
 - **Clear garden** — instant reset of plants (listen-time sky keeps going)
-- **Pixel garden** — 320×200 logical, integer scale to leftover viewport; **2×4** timber patches (`f0`–`f3` front / `b0`–`b3` back), pitch left→right then front→back; seven flower kinds, swaying grass; green vine frame and Figma chrome
+- **Pixel garden** — 320×200 logical, integer backing scale; CSS fills the vine glass (square-pixel letterbox was tried, then dropped so the bed sits against the frame). **2×4** timber patches (`f0`–`f3` front / `b0`–`b3` back); empty visit shows gravel courtyard + “A courtyard at rest”; seven flower kinds; per-plant breeze + onset ripple; integer bloom dest sizes; green vine frame and Figma chrome
 - **Bloom chime** — hover a flower (mouse/pen) or tap (touch) plays a short sine/bell at that plant’s stored `hz`; click while hovering chimes again; one hover-chime until the pointer leaves; grass and empty soil are silent; wilted blooms still chime while on screen. Uses the same AudioContext as Listen, routed to destination (not the analyser). `BloomChime.muted` is the later reduced-motion gate; it is not wired yet.
 
 Pitch pipeline (`src/audio/pitch.ts`):
@@ -77,9 +77,9 @@ Garden (`src/garden/world.ts`):
 - Stores `pitchT`, `loudnessT`, `timbreT`, `hz`
 - `hitFlowerAt` — front-most flower in logical space (ignore grass / empty soil)
 - Kind: `(round(timbreT * 6) + round(pitchClassT * 6)) % 7` — not register, so a patch can mix species
-- Hue: chroma picks the family; high pitch/timbre mixes to jewel hexes, low to soft dusty/mist; taupe wilt
+- Hue: chroma picks the family (soft walk is slate/sage/ice/butter/lilac/blush — not stacked pinks); high pitch/timbre mixes to jewel hexes; taupe wilt. Petal lite/deep are punched so blooms do not melt into one blob under the hour gel.
 - Stem ~5–14 logical px × grow envelope; quiet = compact bloom, loud = full petals
-- Bright timbre raises petal contrast + saturation; onsets add ~200 ms extra sway + petal-open; grass rustles on the same pulse
+- Bright timbre raises petal contrast + saturation; onsets add ~200 ms extra sway + petal-open, delayed by `x` so a beat rustles left→right; each stem has a hashed phase (slow breeze + gust); grass rustles on the same pulse; PNG bloom dest W/H round to whole logical pixels (hitboxes match)
 - Grass after ~360 ms accumulated pause, using **real frame delta**
 - Placement: empty soil cells across the whole patch, preferring spots farthest from plants already in the bed (no same-pitch clumps)
 - Grass prefers empty neighbor cells
@@ -94,7 +94,7 @@ Music path (2026-08-18): Speaker + Listen still mic-only; Music + Listen prompts
 
 Music layout (2026-08-19): stereo mix uses L/R tap (not played through the garden); Speaker / mono pan stays center; duration, tempo, and section energy apply in both modes.
 
-Bloom chime (2026-08-22): pointer maps CSS-stretched canvas → backing store / `getScale()` → logical pixel. Flowers chime at stored `hz` (not the live mix); grass does not.
+Bloom chime (2026-08-22): pointer maps canvas CSS box → backing store / `getScale()` → logical pixel. Flowers chime at stored `hz` (not the live mix); grass does not.
 
 ---
 
@@ -130,10 +130,20 @@ Done. Leftovers / honest limits:
 - Dominant pitch of the mix only (no source separation)
 - Mode is session-only (not persisted)
 - `SongPlayer` / file upload remains deferred (Later)
+- **UI audit #3:** Speaker is filled green like Listen — demote the toggle (only Listen is primary)
 
 ### Phase 3 — Garden feel
 
-Done. Leftover: soil speckles still redraw every frame (Phase 7); loudness/timbre meters left the HUD when the top bar took pitch only.
+Done as a 2×4 timber grid + full-page shell. Picture leftovers (UI audit #1, #2, #6, #9–#11) shipped 2026-08-22:
+
+- **Integer letterbox (#1):** backing store is still an integer scale. CSS fill of the glass was restored after letterbox left large side gutters and a postage-stamp bed. Pixels can be non-square on a wide window.
+- **Empty courtyard (#2):** gravel walk + caption “A courtyard at rest”; no fake flowers; Clear empties instantly
+- **Mobile HUD (#6):** top bar wraps; `--frame-pad` shrinks; overflow clipped so the eight patches stay in view
+- **Listen-time sky (#9):** low-opacity canvas overlay (`hourTintForListenMs`); gravel courtyard underneath. Vertical sky bands were dropped (brown top stroke).
+- **Per-plant wind (#10):** hashed phase, breeze + gust, onset ripple across `x`
+- **Integer bloom sizes (#11):** `bloomPixelSize` rounds dest W/H; hit-test uses the same size
+
+Still later: soil speckles redraw every frame (Phase 7); loudness/timbre meters left the HUD when the top bar took pitch only
 
 ### Phase 4 — Music mix layout
 
@@ -154,7 +164,7 @@ Done. Leftovers / honest limits:
 
 ### Phase 6 — Keep
 
-- No PNG, seed, or clip
+- No PNG, seed, or clip (UI audit #16 — postcard of the glass)
 
 ### Phase 7 — Perf
 
@@ -164,16 +174,27 @@ Done. Leftovers / honest limits:
 
 ### Phase 8 — Teach / a11y
 
-- HUD shows pitch only; no legend or note name
-- Listen has no `aria-pressed`; no keyboard shortcuts (mode toggle does use `aria-pressed`)
-- No `prefers-reduced-motion`
-- Google Fonts CDN in `src/style.css`
+UI audit #4, #5, #7, #8, #12, #15, #18:
+
+- HUD shows pitch only; no legend, note name, or bed compass
+- No hover inspect (kind + Hz close-up)
+- Idle status does not teach hover-to-chime
+- Listen has no `aria-pressed` or `:focus-visible`; no keyboard shortcuts (mode toggle does use `aria-pressed`)
+- No `prefers-reduced-motion`; `BloomChime.muted` unwired
+- Clear garden has the same visual weight as Listen
 
 ### Phase 9 — Hygiene
 
 - `tsconfig.json` `include` is `["src"]` — `api/` and Vite plugins are not in `npm run build` typecheck
 - README still describes the old centered layout, not the full-page meadow
 - `vite.config.ts` comment (“Spotify is active now”) disagrees with README and `.env.example`
+- **UI audit #17:** leftover `.song-form` / `.playback` / rounded HUD CSS
+- Fonts are already local (Wittgenstein + VCR); drop stale Google Fonts notes in the roadmap (done in ROADMAP.md)
+
+### Later (UI audit #13, #14)
+
+- One frame language (pixel vine vs arched glass)
+- Growth-stage flower sheets (bud / open / rest)
 
 ---
 
@@ -204,9 +225,9 @@ src/audio/songPlayer.ts     Unused by UI
 src/audio/spotifyUrl.ts     Unused by UI
 src/audio/qobuzUrl.ts       Unused by UI
 src/garden/world.ts         Clusters, mix-layout x/y, tempo cooldown, gap grass, lifecycle, bloom hit-test
-src/garden/renderer.ts      Full-scene draw; listen-time sky
+src/garden/renderer.ts      Full-scene draw; gravel courtyard; hour gel; per-plant wind
 src/garden/sprites.ts       Pixel flowers / grass (life + wilt)
-src/garden/palette.ts       GROUND + ACCENTS (Figma lace/planter) + pitch hue + sky watch
+src/garden/palette.ts       GROUND + ACCENTS + punchier bloom walk + hour gel
 api/                        Vercel functions (hidden features)
 vite-plugin-*-api.ts        Dev stubs for those APIs
 ```

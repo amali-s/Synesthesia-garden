@@ -18,28 +18,33 @@ const app = document.querySelector<HTMLDivElement>('#app')!
 app.innerHTML = `
   <div class="shell">
     <header class="top-bar">
-      <h1 class="logo">Synesthesia Garden</h1>
-      <div class="controls">
-        <button type="button" class="btn primary" id="listen-btn">Listen</button>
-        <button type="button" class="btn" id="stop-btn" disabled>Stop</button>
-        <button type="button" class="btn" id="clear-btn">Clear garden</button>
-        <div class="mode-toggle" role="group" aria-label="Listen source">
-          <button type="button" class="mode-btn" id="mode-speaker" aria-pressed="true">Speaker</button>
-          <button type="button" class="mode-btn" id="mode-music" aria-pressed="false">Music</button>
+      <div class="top-bar__primary">
+        <h1 class="logo">Synesthesia Garden</h1>
+        <div class="controls">
+          <button type="button" class="btn primary" id="listen-btn">Listen</button>
+          <button type="button" class="btn" id="stop-btn" disabled>Stop</button>
+          <button type="button" class="btn" id="clear-btn">Clear garden</button>
+          <div class="mode-toggle" role="group" aria-label="Listen source">
+            <button type="button" class="mode-btn" id="mode-speaker" aria-pressed="true">Speaker</button>
+            <button type="button" class="mode-btn" id="mode-music" aria-pressed="false">Music</button>
+          </div>
         </div>
       </div>
-      <div class="meter pitch-meter" title="Pitch">
-        <span class="meter-label">Pitch</span>
-        <div class="meter-track"><div class="meter-fill" id="pitch-fill"></div></div>
-        <span class="meter-value" id="pitch-hz">— Hz</span>
+      <div class="top-bar__meter">
+        <div class="meter pitch-meter" title="Pitch">
+          <span class="meter-label">Pitch</span>
+          <div class="meter-track"><div class="meter-fill" id="pitch-fill"></div></div>
+          <span class="meter-value" id="pitch-hz">— Hz</span>
+        </div>
+        <div class="status" id="status">Tap Listen to plant with your voice</div>
       </div>
-      <div class="status" id="status">Tap Listen to plant with your voice</div>
     </header>
 
     <main class="meadow">
       <div class="window-frame">
         <div class="window-frame__glass">
           <canvas id="garden" aria-label="Pixel art garden grown from your voice or music"></canvas>
+          <p class="courtyard-caption" id="courtyard-caption">A courtyard at rest</p>
         </div>
       </div>
     </main>
@@ -56,6 +61,7 @@ const pitchFill = document.querySelector<HTMLDivElement>('#pitch-fill')!
 const pitchHz = document.querySelector<HTMLSpanElement>('#pitch-hz')!
 const statusEl = document.querySelector<HTMLDivElement>('#status')!
 const glass = document.querySelector<HTMLDivElement>('.window-frame__glass')!
+const courtyardCaption = document.querySelector<HTMLParagraphElement>('#courtyard-caption')!
 
 const garden = new Garden({ width: LOGICAL_W, height: LOGICAL_H })
 const detector = new PitchDetector()
@@ -71,26 +77,40 @@ let hoverFlower: FlowerPlant | null = null
 /** Ignore synthesized mouse hover after a tap. */
 let suppressMouseHoverUntil = 0
 
-function computeScale(): number {
-  const maxW = Math.max(1, glass?.clientWidth ?? window.innerWidth)
-  const maxH = Math.max(1, glass?.clientHeight ?? window.innerHeight)
-  return Math.max(1, Math.floor(Math.min(maxW / LOGICAL_W, maxH / LOGICAL_H)))
+function glassBox(): { maxW: number; maxH: number } {
+  return {
+    maxW: Math.max(1, glass?.clientWidth ?? window.innerWidth),
+    maxH: Math.max(1, glass?.clientHeight ?? window.innerHeight),
+  }
+}
+
+/** Integer backing scale from the glass; CSS still fills the vine (no side gutters). */
+function computeBackingScale(): number {
+  const { maxW, maxH } = glassBox()
+  return Math.max(1, Math.round(Math.min(maxW / LOGICAL_W, maxH / LOGICAL_H)))
 }
 
 const renderer = new GardenRenderer(canvas, LOGICAL_W, LOGICAL_H, {
-  scale: computeScale(),
+  scale: computeBackingScale(),
 })
 void loadBloomArt()
 
 function fitCanvas(): void {
-  renderer.setScale(computeScale())
+  renderer.setScale(computeBackingScale())
   canvas.style.left = '0'
   canvas.style.top = '0'
+  canvas.style.right = '0'
+  canvas.style.bottom = '0'
   canvas.style.width = '100%'
   canvas.style.height = '100%'
 }
 
+function syncCourtyardCaption(): void {
+  courtyardCaption.hidden = garden.plants.length > 0
+}
+
 fitCanvas()
+syncCourtyardCaption()
 
 function setStatus(text: string): void {
   statusEl.textContent = text
@@ -212,7 +232,8 @@ clearBtn.addEventListener('click', () => {
   garden.clear()
   hoverFlower = null
   canvas.classList.remove('is-over-bloom')
-  setStatus('Garden cleared — a fresh bed awaits')
+  syncCourtyardCaption()
+  setStatus('Garden cleared — a courtyard at rest')
 })
 
 function pointerToLogical(e: PointerEvent): { x: number; y: number } | null {
@@ -328,6 +349,7 @@ function frame(now: number): void {
     }
   }
 
+  syncCourtyardCaption()
   renderer.draw(garden, now, livePitchT)
   requestAnimationFrame(frame)
 }

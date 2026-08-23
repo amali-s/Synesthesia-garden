@@ -2,7 +2,7 @@
 
 Sequenced plan for Synesthesia Garden. Status lives in [`project-state.md`](./project-state.md) — update that file when a phase starts or finishes.
 
-Order is deliberate: richer mapping first (the core idea), then two listen modes (voice vs music already playing on the device), then garden feel, then music-mix layout (how a song occupies the bed), then replay a bloom as a chime, then keep/share, then performance and polish.
+Order is deliberate: richer mapping first (the core idea), then two listen modes (voice vs music already playing on the device), then garden feel, then music-mix layout (how a song occupies the bed), then replay a bloom as a chime, then Phase 3 picture leftovers, then keep/share, then performance and polish.
 
 ---
 
@@ -57,6 +57,12 @@ A pixel meadow that *feels* like synesthesia: several qualities of sound (pitch,
 
 **Touches:** `src/audio/pitch.ts` (new capture path + mode-specific constraints), `src/main.ts`, `src/style.css`
 
+**Leftovers (UI audit):** Mode toggle shipped; it still *looks* like a second primary.
+
+| Work | Intent |
+| --- | --- |
+| Demote Speaker | Only **Listen** is filled green. Speaker \| Music stays a segmented toggle (pressed state, not a second `.btn.primary`). |
+
 ---
 
 ## Phase 3 — Organic garden + lifecycle
@@ -73,6 +79,17 @@ A pixel meadow that *feels* like synesthesia: several qualities of sound (pitch,
 **Done when:** The garden is the largest thing on the page. A few minutes of voice or a song looks like a meadow, not rows. Clearing is still instant.
 
 **Touches:** `src/garden/world.ts`, `src/garden/renderer.ts`, maybe `src/garden/palette.ts`, `src/main.ts`, `src/style.css`
+
+**Leftovers (UI audit):** The 2×4 timber grid and full-page shell shipped; the picture still reads as empty trays, and pixels are not held to an integer grid.
+
+| Work | Intent |
+| --- | --- |
+| Integer letterbox | Fit 320×200 at an integer scale, centered in the glass. Do not CSS-stretch width and height independently (that crops beds on phones and smears pixels). |
+| Empty courtyard | Idle bed is a courtyard at rest: draw listen-time sky or a path, and/or one idle plant or a glass caption — not eight blank boxes. |
+| Mobile HUD | On narrow widths, wrap chrome into two rows, shrink vine pad, keep all eight patches on screen. |
+| Wire listen-time sky | `skyForListenMs` / `SKY_WATCH` exist in `palette.ts`; `renderer.drawPath` still fills gravel only. Dawn → dusk must actually paint. |
+| Per-plant wind | Sway is one global sine. Give each plant a phase; add a slow breeze plus an onset ripple across x so stems do not tick in chorus. |
+| Integer bloom sizes | Round PNG dest height/width to whole logical pixels so loudness scaling does not fight `image-rendering: pixelated`. |
 
 ---
 
@@ -124,7 +141,7 @@ A pixel meadow that *feels* like synesthesia: several qualities of sound (pitch,
 
 | Work | Intent |
 | --- | --- |
-| Download PNG | Export the garden (optionally including the window frame) |
+| Download PNG | Export the garden (optionally including the window frame) — the vine glass is already a postcard. |
 | Optional share URL / seed | Reopen a garden later |
 | Optional short clip | GIF or WebM of sway — only if PNG feels incomplete |
 
@@ -156,10 +173,13 @@ A pixel meadow that *feels* like synesthesia: several qualities of sound (pitch,
 
 | Work | Intent |
 | --- | --- |
-| Legend | Tiny key: low → daisy / gold, high → orchid / mauve (update copy if Phase 1 or 4 changes the map); mention hover/press to hear a bloom’s pitch if the chime phase shipped |
-| Note name | Show `A4` / `C5` next to Hz |
+| Legend | Tiny key: pitch walks left→right then front→back (low front-left, high back-right); timbre → kind. Update copy if mapping changes. |
+| Note name + bed compass | Show `A4` / `C5` next to Hz; a tiny compass so the meter is a map, not only a bar. |
+| Status / chime hint | Idle copy: hover or tap a bloom to hear its pitch. Music idle copy already covers Share audio — keep that honest. |
+| Hover inspect | On hover/tap, a brief close-up: larger tinted sprite, kind name, Hz (and note). Garden-scale blooms are too small to study as species. |
 | Keyboard | `L` listen/pause, `C` clear (and export if Keep exists) |
-| A11y | `aria-pressed` on Listen, `prefers-reduced-motion` for sway/grow; chimes should not fire in a tight loop and should be skippable (mute or reduced-motion) |
+| A11y | `aria-pressed` on Listen; `:focus-visible` ink rings; `prefers-reduced-motion` freezes sway/grow; hook `BloomChime.muted` so chimes skip under reduced motion or a mute control. |
+| Quieter Clear | Clear garden must not match Listen’s visual weight. Ghost/secondary chrome; optional few-second undo. Clearing stays instant. |
 
 **Done when:** A new visitor can predict the next bloom from the HUD, and the app is usable from the keyboard with reduced motion respected.
 
@@ -176,7 +196,8 @@ A pixel meadow that *feels* like synesthesia: several qualities of sound (pitch,
 | Align Vite plugins with UI | Don’t load Spotify/Qobuz middleware while those UIs are hidden |
 | Typecheck `api/` | `tsconfig` currently includes only `src` |
 | Tests | `pitchNorm`, `Garden.ingest`, URL parsers if streaming stays |
-| Fonts | Self-host Pixelify / Cormorant / DM Sans instead of Google Fonts CDN |
+| Fonts | Display/body are already local (Wittgenstein, VCR OSD Mono). Drop any leftover Google Fonts CDN comments or unused `@font-face`. |
+| Dead HUD CSS | Delete or quarantine leftover `.song-form`, `.playback`, `.hud`, `.file-btn`, and the rounded gold radii — they describe a UI that is not in `main.ts`. |
 | README | Match shipped features; link this roadmap and `project-state.md` |
 
 **Done when:** `npm run build` typechecks what we ship, dead paths are either gone or clearly marked deferred, and the README matches the running app.
@@ -194,11 +215,38 @@ Do not start these until Phases 1–2 are real. Streaming and file upload are op
 | Qobuz full-track stream | Backend exists; ToS / rights risk for a public web app. |
 | Instrument → specific flower | After Phase 4 layout; needs more than dominant pitch (envelope + spectrum, or a classifier). |
 | MIDI keyboard input | Natural cousin of log-pitch mapping. |
-| Day/night, weather, fauna | After lifecycle (Phase 3) so they have a world to live in. |
+| Day/night, weather, fauna | After lifecycle (Phase 3) so they have a world to live in. Listen-time sky is Phase 3 leftover, not this row. |
+| One frame language | Commit to pixel vine *or* arched Tiffany glass — SVG ivy + VCR buttons + PNG flowers is three dialects. |
+| Growth-stage sheets | Bud / open / rest art instead of one PNG scaled up. Phase 3 used a size tween on purpose; new sheets are craft, not mapping. |
 | PWA / offline | After fonts are local and streaming is decided. |
 
 ---
 
 ## Suggested build order in one line
 
-**Mapping → Speaker/Music listen modes → organic bed → music-mix layout → bloom chime → PNG export → perf → legend/a11y → hygiene.**
+**Mapping → Speaker/Music listen modes → organic bed → music-mix layout → bloom chime → Phase 3 picture leftovers → Phase 2 chrome leftover → PNG export → perf → legend/a11y → hygiene → Later craft.**
+
+## UI audit → phase (2026-08-22)
+
+Items from the visual audit, mapped onto existing phases (not a new phase). Do Phase 3 leftovers before Phase 6 so export is not a stretched empty tray.
+
+| # | Fix | Phase |
+| --- | --- | --- |
+| 1 | Integer letterbox the canvas (no CSS stretch on both axes) | **3** leftover |
+| 2 | Empty courtyard: sky or path + idle plant or glass caption | **3** leftover |
+| 3 | Demote Speaker so only Listen is filled green | **2** leftover |
+| 4 | Status / hint: hover a bloom to hear it; Music Share audio | **8** (hint); Music copy already in **2** |
+| 5 | Focus-visible rings; `aria-pressed` on Listen | **8** |
+| 6 | Mobile HUD: two rows; shrink vine pad; never clip a patch | **3** leftover |
+| 7 | Note name beside Hz and a tiny bed compass | **8** |
+| 8 | Hover inspect: larger tinted sprite + kind + Hz | **8** |
+| 9 | Wire listen-time sky (`skyForListenMs` unused) | **3** leftover |
+| 10 | Per-plant wind phase + onset ripple across x | **3** leftover |
+| 11 | Integer bloom sizes; keep PNG pixels on the grid | **3** leftover |
+| 12 | Legend (low front-left, high back-right; timbre → kind) | **8** |
+| 13 | One frame language: pixel vine or arched Tiffany glass | **Later** |
+| 14 | Growth-stage sheets (bud / open / rest) | **Later** |
+| 15 | `prefers-reduced-motion` + chime mute (`BloomChime.muted`) | **8** |
+| 16 | Postcard export of the glass | **6** |
+| 17 | Delete leftover `.song-form` / rounded HUD CSS | **9** |
+| 18 | Clear garden: quieter control + short undo | **8** |

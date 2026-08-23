@@ -135,6 +135,22 @@ export function bloomDrawHeight(
   )
 }
 
+/** Whole logical pixels — shared by draw and hover/tap hitboxes. */
+export function bloomPixelSize(
+  kind: FlowerKind,
+  loudnessT: number,
+  grow: number,
+  restT: number,
+  wiltT: number,
+  onsetPulse: number,
+): { w: number; h: number } {
+  const sheet = sheets.get(kind)
+  const aspect = sheet ? sheet.w / sheet.h : 0.65
+  const destH = Math.max(1, Math.round(bloomDrawHeight(loudnessT, grow, restT, wiltT, onsetPulse)))
+  const destW = Math.max(1, Math.round(destH * aspect))
+  return { w: destW, h: destH }
+}
+
 export function bloomHitSize(
   kind: FlowerKind,
   loudnessT: number,
@@ -142,10 +158,7 @@ export function bloomHitSize(
   restT: number,
   wiltT: number,
 ): { w: number; h: number } {
-  const sheet = sheets.get(kind)
-  const h = bloomDrawHeight(loudnessT, grow, restT, wiltT, 0)
-  const aspect = sheet ? sheet.w / sheet.h : 0.65
-  return { w: h * aspect, h }
+  return bloomPixelSize(kind, loudnessT, grow, restT, wiltT, 0)
 }
 
 export function drawBloomArt(
@@ -168,8 +181,14 @@ export function drawBloomArt(
   const sheet = tintedSheet(kind, pcT, pitchT, timbreT, wiltT)
   if (!sheet) return false
 
-  const destH = bloomDrawHeight(loudnessT, grow, restT, wiltT, onsetPulse)
-  const destW = destH * (sheet.width / sheet.height)
+  const { w: destW, h: destH } = bloomPixelSize(
+    kind,
+    loudnessT,
+    grow,
+    restT,
+    wiltT,
+    onsetPulse,
+  )
   const lean =
     Math.sin(sway) * (0.12 + pitchT * 0.1) * (1 - wiltT) +
     Math.sin(sway * 2.4) * onsetPulse * 0.16 +
@@ -187,7 +206,7 @@ export function drawBloomArt(
     0,
     sheet.width,
     sheet.height,
-    (-destW / 2) * scale,
+    (-Math.floor(destW / 2) * scale),
     -destH * scale,
     destW * scale,
     destH * scale,
