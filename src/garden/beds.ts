@@ -2,9 +2,9 @@
 
 export const GRID_COLS = 4
 export const GRID_ROWS = 2
-/** Inset from canvas / vine frame; leaves room for the 2px planter drop-shadow. */
+/** Inset from canvas / vine frame; leaves room for the hour-cast planter shadow (up to 2px). */
 export const GRID_PAD = 8
-/** Gutter between patches (shadow is 2px, so they never kiss). */
+/** Gutter between patches (shadow ≤2px, so they never kiss). */
 export const GRID_GAP = 8
 export const PATCH_W = 70
 export const PATCH_H = 88
@@ -101,12 +101,48 @@ export function soilRect(bed: GardenBed): {
   }
 }
 
-export function bedCols(bed: GardenBed, cellW: number): number {
+export type SoilGrid = {
+  cols: number
+  rows: number
+  x0: number
+  y0: number
+  stepX: number
+  stepY: number
+}
+
+/** Even cell grid that spans the whole soil box (no leftover strip on the right/bottom). */
+export function soilGrid(bed: GardenBed, cellW: number, cellH: number): SoilGrid {
   const r = soilRect(bed)
-  return Math.max(1, Math.floor((r.x1 - r.x0) / cellW))
+  const soilW = Math.max(1, r.x1 - r.x0)
+  const soilH = Math.max(1, r.y1 - r.y0)
+  const cols = Math.max(1, Math.round(soilW / cellW))
+  const rows = Math.max(1, Math.round(soilH / cellH))
+  return { cols, rows, x0: r.x0, y0: r.y0, stepX: soilW / cols, stepY: soilH / rows }
+}
+
+export function gridCol(g: SoilGrid, x: number): number {
+  return Math.min(g.cols - 1, Math.max(0, Math.floor((x - g.x0) / g.stepX)))
+}
+
+export function gridRow(g: SoilGrid, y: number): number {
+  return Math.min(g.rows - 1, Math.max(0, Math.floor((y - g.y0) / g.stepY)))
+}
+
+/**
+ * Stem sits in the lower-middle of the cell so the bloom (drawn upward)
+ * stays on the soil instead of in the timber above the patch.
+ */
+export function gridStem(g: SoilGrid, col: number, row: number): { x: number; y: number } {
+  return {
+    x: g.x0 + (col + 0.5) * g.stepX,
+    y: g.y0 + (row + 0.84) * g.stepY,
+  }
+}
+
+export function bedCols(bed: GardenBed, cellW: number): number {
+  return soilGrid(bed, cellW, cellW).cols
 }
 
 export function bedRows(bed: GardenBed, cellH: number): number {
-  const r = soilRect(bed)
-  return Math.max(1, Math.floor((r.y1 - r.y0) / cellH))
+  return soilGrid(bed, cellH, cellH).rows
 }

@@ -104,17 +104,17 @@ body {
   flex-wrap: wrap;
   align-items: center;
   gap: 0.45rem 0.85rem;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
   max-width: 100%;
 }
 
 .top-bar__meter {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 0.45rem 0.85rem;
-  flex: 1 1 16rem;
+  flex: 1 1 22rem;
   min-width: 0;
   max-width: 100%;
 }
@@ -259,9 +259,9 @@ body {
 }
 
 .pitch-meter {
-  flex: 1 1 12rem;
-  max-width: 22rem;
-  min-width: 10rem;
+  flex: 0 1 10rem;
+  max-width: 12rem;
+  min-width: 7.5rem;
 }
 
 .meter-label,
@@ -306,8 +306,9 @@ body {
   font-family: var(--font);
   font-size: 0.78rem;
   color: var(--ink-soft);
-  flex: 1 1 10rem;
-  min-width: 8rem;
+  flex: 1 1 22rem;
+  min-width: 12rem;
+  min-height: 2lh;
 }
 
 .controls {
@@ -354,15 +355,16 @@ body {
 }
 
 .mode-btn[aria-pressed='true'] {
-  color: var(--cream);
+  color: var(--ink);
+  background: var(--brass);
+  box-shadow:
+    inset 2px 2px 0 var(--gold-deep),
+    inset -1px -1px 0 var(--brass-lite);
 }
 
-.mode-btn[aria-pressed='true']#mode-speaker {
-  background: var(--patina);
-}
-
-.mode-btn[aria-pressed='true']#mode-music {
-  background: var(--planter-stroke);
+.mode-btn[aria-pressed='true']:hover {
+  color: var(--ink);
+  background: var(--gold);
 }
 
 .btn {
@@ -535,13 +537,18 @@ body {
     padding: 0.4rem 0.55rem;
   }
 
+  .top-bar__meter {
+    flex-wrap: wrap;
+  }
+
   .pitch-meter {
-    flex-basis: 12rem;
-    max-width: none;
+    flex: 0 1 10rem;
+    max-width: 12rem;
   }
 
   .status {
-    flex: 1 1 8rem;
+    flex: 1 1 18rem;
+    min-width: 12rem;
   }
 
   .meter-value {
@@ -595,6 +602,7 @@ body {
   .pitch-meter {
     flex: 1 1 auto;
     min-width: 0;
+    max-width: none;
   }
 
   .status {

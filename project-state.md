@@ -2,9 +2,9 @@
 
 Living snapshot of Synesthesia Garden. Update this file at the start of a session (if the repo moved) and at the end of any phase or sizable change.
 
-**Last reviewed:** 2026-08-22 (hour gel + punchier bloom paint)  
-**Active phase:** none (Phases 1–5 done; Phase 2 has a chrome leftover)  
-**Next recommended work:** [Phase 2 leftover](./ROADMAP.md#phase-2--music-mode-vs-speaker-mode) (demote Speaker), then [Phase 6 — Keep](./ROADMAP.md#phase-6--keep-what-grew)
+**Last reviewed:** 2026-08-23 (demote Speaker | Music chrome)  
+**Active phase:** none (Phases 1–5 done; Phase 2 leftover done)  
+**Next recommended work:** [Phase 6 — Keep](./ROADMAP.md#phase-6--keep-what-grew)
 
 Plan and acceptance criteria: [`ROADMAP.md`](./ROADMAP.md)
 
@@ -23,7 +23,7 @@ Shipped loop: **Speaker or Music → Listen → flowers; pause → grass in gaps
 | Area | Status |
 | --- | --- |
 | Mic pitch garden | **Shipped** — Listen / Stop / Clear |
-| Speaker vs Music listen | **Shipped** — top-bar toggle; Music uses `getDisplayMedia` + Share audio |
+| Speaker vs Music listen | **Shipped** — segmented cream/brass toggle; Music uses `getDisplayMedia` + Share audio; only Listen is filled green |
 | Pitch → patch; chroma + timbre → kind/hue | **Shipped** — log2 80–1000 Hz (Speaker); 50–4000 Hz (Music) |
 | Loudness → stem + bloom | **Shipped** — log RMS, AGC off |
 | Timbre → kind (with chroma) + contrast | **Shipped** — spectral centroid |
@@ -83,7 +83,7 @@ Garden (`src/garden/world.ts`):
 - Grass after ~360 ms accumulated pause, using **real frame delta**
 - Placement: empty soil cells across the whole patch, preferring spots farthest from plants already in the bed (no same-pitch clumps)
 - Grass prefers empty neighbor cells
-- Cap ~560 living plants; oldest **wilt/fade** (~2.6 s) instead of hard splice
+- Flowers fill a patch cell by cell on a grid that spans the whole soil (stems sit low in each cell so blooms stay on the dirt). Only when every cell has a living flower does a new bloom wilt the oldest in that bed and take its cell. Garden-wide cap ~560 living plants (flowers + grass); oldest wilt/fade (~2.6 s) instead of hard splice
 - Lifecycle: seed (~0.8 s) → bloom (~12 s) → rest (droop) → wilt when over cap
 
 Manual checks (2026-08-15): sung scale walks kinds; quiet vs belt at one pitch → stem/bloom only; oo vs ee at one pitch → kind + contrast; staccato refreshes onset, drone does not; silence → grass.
@@ -130,7 +130,7 @@ Done. Leftovers / honest limits:
 - Dominant pitch of the mix only (no source separation)
 - Mode is session-only (not persisted)
 - `SongPlayer` / file upload remains deferred (Later)
-- **UI audit #3:** Speaker is filled green like Listen — demote the toggle (only Listen is primary)
+- **UI audit #3:** done — Speaker | Music is a cream/brass segmented toggle (shared inset pressed); only Listen is filled green
 
 ### Phase 3 — Garden feel
 

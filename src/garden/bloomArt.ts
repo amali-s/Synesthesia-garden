@@ -127,7 +127,7 @@ export function bloomDrawHeight(
   onsetPulse: number,
 ): number {
   return (
-    (14 + loudnessT * 10) *
+    (14 + loudnessT * 6.4) *
     Math.max(0.42, grow) *
     (1 - restT * 0.1) *
     (1 - wiltT * 0.32) *

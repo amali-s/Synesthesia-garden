@@ -2,10 +2,12 @@ import { pitchClassT, type PitchSample } from '../audio/pitch'
 import {
   GARDEN_BEDS,
   bedById,
-  bedCols,
   bedFromPitch,
-  bedRows,
   bedsBackToFront,
+  gridCol,
+  gridRow,
+  gridStem,
+  soilGrid,
   soilRect,
   type BedId,
   type GardenBed,
@@ -166,6 +168,52 @@ export class Garden {
     }
   }
 
+  private livingFlowersInBed(bedId: BedId): FlowerPlant[] {
+    const out: FlowerPlant[] = []
+    for (const p of this.plants) {
+      if (p.type === 'flower' && p.bedId === bedId && p.wiltStarted === null) out.push(p)
+    }
+    return out
+  }
+
+  /** Cells that already have a living flower (grass does not count). */
+  private flowerCells(bedId: BedId): Set<string> {
+    const keys = new Set<string>()
+    for (const p of this.livingFlowersInBed(bedId)) {
+      keys.add(this.cellKey(p.bedId, p.x, p.y))
+    }
+    return keys
+  }
+
+  /** True when every soil cell in the patch already has a living flower. */
+  private bedFullOfFlowers(bed: GardenBed): boolean {
+    const taken = this.flowerCells(bed.id)
+    const g = soilGrid(bed, CELL_W, CELL_H)
+    for (let row = 0; row < g.rows; row++) {
+      for (let col = 0; col < g.cols; col++) {
+        if (!taken.has(`${bed.id}:${col},${row}`)) return false
+      }
+    }
+    return true
+  }
+
+  /** Wilt the oldest living flower in a patch so a new bloom can take its cell. */
+  private wiltOldestFlowerInBed(bedId: BedId, now: number): void {
+    const living = this.livingFlowersInBed(bedId)
+    if (living.length === 0) return
+    living.sort((a, b) => a.born - b.born)
+    living[0]!.wiltStarted = now
+  }
+
+  /** A flower taking a cell crowds out grass in that cell. */
+  private wiltGrassAt(bedId: BedId, x: number, y: number, now: number): void {
+    const key = this.cellKey(bedId, x, y)
+    for (const p of this.plants) {
+      if (p.type !== 'grass' || p.bedId !== bedId || p.wiltStarted !== null) continue
+      if (this.cellKey(p.bedId, p.x, p.y) === key) p.wiltStarted = now
+    }
+  }
+
   private occupied(): Set<string> {
     const keys = new Set<string>()
     for (const p of this.plants) {
@@ -176,11 +224,8 @@ export class Garden {
   }
 
   private cellKey(bedId: BedId, x: number, y: number): string {
-    const bed = bedById(bedId)
-    const r = soilRect(bed)
-    const col = Math.round((x - r.x0) / CELL_W)
-    const row = Math.round((y - r.y0) / CELL_H)
-    return `${bedId}:${col},${row}`
+    const g = soilGrid(bedById(bedId), CELL_W, CELL_H)
+    return `${bedId}:${gridCol(g, x)},${gridRow(g, y)}`
   }
 
   private clampPos(bed: GardenBed, x: number, y: number): { x: number; y: number } {
@@ -191,35 +236,32 @@ export class Garden {
     }
   }
 
-  /** Place on an empty soil cell, preferring spots farthest from plants already in the bed. */
+  /** Place on a cell without a flower, preferring spots farthest from blooms already in the bed. */
   private placeFlower(bed: GardenBed): { x: number; y: number } {
-    const occ = this.occupied()
-    const b = soilRect(bed)
-    const cols = bedCols(bed, CELL_W)
-    const rows = bedRows(bed, CELL_H)
-    const inBed = this.plants.filter((p) => p.bedId === bed.id && p.wiltStarted === null)
+    const taken = this.flowerCells(bed.id)
+    const g = soilGrid(bed, CELL_W, CELL_H)
+    const inBed = this.livingFlowersInBed(bed.id)
     const empty: Array<{ x: number; y: number; spread: number }> = []
 
-    for (let row = 0; row < rows; row++) {
-      for (let col = 0; col < cols; col++) {
-        const x = b.x0 + col * CELL_W + (Math.random() * 4 - 2)
-        const y = b.y0 + row * CELL_H + (Math.random() * 4 - 2)
-        const pos = this.clampPos(bed, x, y)
-        if (occ.has(this.cellKey(bed.id, pos.x, pos.y))) continue
+    for (let row = 0; row < g.rows; row++) {
+      for (let col = 0; col < g.cols; col++) {
+        if (taken.has(`${bed.id}:${col},${row}`)) continue
+        const stem = gridStem(g, col, row)
         let nearest = 96
         for (const p of inBed) {
-          const d = Math.hypot(p.x - pos.x, p.y - pos.y)
+          const d = Math.hypot(p.x - stem.x, p.y - stem.y)
           if (d < nearest) nearest = d
         }
-        empty.push({ ...pos, spread: nearest })
+        empty.push({ ...stem, spread: nearest })
       }
     }
 
     if (empty.length === 0) {
+      const r = soilRect(bed)
       return this.clampPos(
         bed,
-        b.x0 + Math.random() * (b.x1 - b.x0),
-        b.y0 + Math.random() * (b.y1 - b.y0),
+        r.x0 + Math.random() * (r.x1 - r.x0),
+        r.y0 + Math.random() * (r.y1 - r.y0),
       )
     }
 
@@ -233,21 +275,18 @@ export class Garden {
   /** Grass fills empty cells in a patch, preferring gaps beside existing plants. */
   private placeGrass(bed: GardenBed): { x: number; y: number } {
     const occ = this.occupied()
+    const g = soilGrid(bed, CELL_W, CELL_H)
     const b = soilRect(bed)
-    const cols = bedCols(bed, CELL_W)
-    const rows = bedRows(bed, CELL_H)
     const gaps: Array<{ x: number; y: number; score: number }> = []
     const inBed = this.plants.filter((p) => p.bedId === bed.id && p.wiltStarted === null)
 
-    for (let row = 0; row < rows; row++) {
-      for (let col = 0; col < cols; col++) {
-        const x = b.x0 + col * CELL_W + (Math.random() * 6 - 3)
-        const y = b.y0 + row * CELL_H + (Math.random() * 5 - 2)
-        const pos = this.clampPos(bed, x, y)
-        if (occ.has(this.cellKey(bed.id, pos.x, pos.y))) continue
+    for (let row = 0; row < g.rows; row++) {
+      for (let col = 0; col < g.cols; col++) {
+        if (occ.has(`${bed.id}:${col},${row}`)) continue
+        const stem = gridStem(g, col, row)
         const neighbors = neighborCount(occ, bed.id, col, row)
         if (neighbors === 0 && inBed.length > 8) continue
-        gaps.push({ ...pos, score: neighbors })
+        gaps.push({ ...stem, score: neighbors })
       }
     }
 
@@ -272,7 +311,9 @@ export class Garden {
     this.lastBedId = bed.id
     const pcT = pitchClassT(hz)
     const kind = kindFromSound(sample.timbreT, pcT)
+    if (this.bedFullOfFlowers(bed)) this.wiltOldestFlowerInBed(bed.id, now)
     const { x, y } = this.placeFlower(bed)
+    this.wiltGrassAt(bed.id, x, y, now)
     this.plants.push({
       type: 'flower',
       x,
