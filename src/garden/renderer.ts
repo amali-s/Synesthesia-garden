@@ -3,7 +3,7 @@ import {
   bedsBackToFront,
   type GardenBed,
 } from './beds'
-import { ACCENTS, GROUND, hourTintForListenMs } from './palette'
+import { ACCENTS, GROUND, hourShadowOffsetForListenMs, hourTintForListenMs } from './palette'
 import { drawFlower, drawGrass } from './sprites'
 import { plantLife, type Garden, type Plant } from './world'
 
@@ -58,7 +58,7 @@ export class GardenRenderer {
     this.drawCourtyard()
 
     for (const bed of bedsBackToFront()) {
-      this.drawBed(bed)
+      this.drawBed(bed, garden.listenMs)
       const inBed = garden.plants.filter((p) => p.bedId === bed.id)
       inBed.sort((a, b) => a.y - b.y)
       for (const plant of inBed) {
@@ -158,15 +158,16 @@ export class GardenRenderer {
     ctx.imageSmoothingEnabled = false
   }
 
-  private drawBed(bed: GardenBed): void {
+  private drawBed(bed: GardenBed, listenMs: number): void {
     const t = bed.timber
     const d = bed.depth
     const ox = bed.x
     const oy = bed.y
     const ow = bed.w
     const oh = bed.h
+    const { dx, dy } = hourShadowOffsetForListenMs(listenMs)
 
-    this.fillRect(ox + 2, oy + 2, ow, oh, GROUND.timberShadow)
+    this.fillRect(ox + dx, oy + dy, ow, oh, GROUND.timberShadow)
 
     this.fillRect(ox, oy, ow, oh, GROUND.timberDark)
     this.fillRect(ox + 1, oy + 1, ow - 2, oh - d - 1, GROUND.timber)

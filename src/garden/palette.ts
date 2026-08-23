@@ -87,8 +87,12 @@ export function lerpHex(a: string, b: string, t: number): string {
   return `rgb(${r} ${g} ${bl})`
 }
 
+function hourT(listenMs: number): number {
+  return Math.min(1, Math.max(0, listenMs / SKY_LISTEN_MS))
+}
+
 export function hourTintForListenMs(listenMs: number): { tint: string; alpha: number } {
-  const t = Math.min(1, Math.max(0, listenMs / SKY_LISTEN_MS))
+  const t = hourT(listenMs)
   let i = 0
   while (i < HOUR_WATCH.length - 2 && t > HOUR_WATCH[i + 1]!.t) i++
   const a = HOUR_WATCH[i]!
@@ -98,6 +102,21 @@ export function hourTintForListenMs(listenMs: number): { tint: string; alpha: nu
   return {
     tint: lerpHex(a.tint, b.tint, u),
     alpha: a.alpha + (b.alpha - a.alpha) * u,
+  }
+}
+
+/**
+ * Planter drop-shadow in logical pixels. Same listen clock as the hour gel:
+ * dawn sun in the east (shadow west / left), noon short and toward the viewer,
+ * dusk sun in the west (shadow east / right).
+ */
+export function hourShadowOffsetForListenMs(listenMs: number): { dx: number; dy: number } {
+  const sun = hourT(listenMs) * Math.PI
+  const elev = Math.sin(sun)
+  const len = 2 - elev
+  return {
+    dx: Math.round(-Math.cos(sun) * len) || 0,
+    dy: Math.max(1, Math.round(1 + (1 - elev))),
   }
 }
 
