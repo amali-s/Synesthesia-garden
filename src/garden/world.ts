@@ -69,6 +69,8 @@ export class Garden {
   listenMs = 0
   readonly config: GardenConfig
 
+  /** Per-bed plants kept in y order so draw never copy-sorts. */
+  private byBed: Record<BedId, Plant[]> = emptyBedPlants()
   private lastSpawn = 0
   private lastVoice = 0
   private pauseAccum = 0
@@ -81,12 +83,34 @@ export class Garden {
     this.config = config
   }
 
+  /** Living + wilting plants in this patch, back-to-front (ascending y). */
+  plantsInBed(bedId: BedId): readonly Plant[] {
+    return this.byBed[bedId]
+  }
+
   clear(): void {
     this.plants = []
+    this.byBed = emptyBedPlants()
     this.pauseAccum = 0
     this.lastSpawn = 0
     this.lastVoice = 0
     this.lastOnset = 0
+  }
+
+  /** Clone living + wilting plants. Does not include listen-time sky. */
+  snapshotPlants(): Plant[] {
+    return this.plants.map((p) => ({ ...p }))
+  }
+
+  /** Put flowers/grass back after a clear. Listen-time sky is left as-is. */
+  restorePlants(plants: Plant[]): void {
+    this.plants = []
+    this.byBed = emptyBedPlants()
+    this.pauseAccum = 0
+    this.lastSpawn = 0
+    this.lastVoice = 0
+    this.lastOnset = 0
+    for (const p of plants) this.insertPlant({ ...p })
   }
 
   /**
@@ -118,10 +142,13 @@ export class Garden {
     this.frameDt = dt
     if (listening) this.listenMs += dt
     if (this.plants.some((p) => p.wiltStarted !== null)) {
-      this.plants = this.plants.filter((p) => {
-        if (p.wiltStarted === null) return true
-        return now - p.wiltStarted < WILT_MS
-      })
+      const keep = (p: Plant): boolean =>
+        p.wiltStarted === null || now - p.wiltStarted < WILT_MS
+      this.plants = this.plants.filter(keep)
+      for (const bed of GARDEN_BEDS) {
+        const list = this.byBed[bed.id]
+        if (list.some((p) => !keep(p))) this.byBed[bed.id] = list.filter(keep)
+      }
     }
     this.startWilts(now)
   }
@@ -314,7 +341,7 @@ export class Garden {
     if (this.bedFullOfFlowers(bed)) this.wiltOldestFlowerInBed(bed.id, now)
     const { x, y } = this.placeFlower(bed)
     this.wiltGrassAt(bed.id, x, y, now)
-    this.plants.push({
+    this.insertPlant({
       type: 'flower',
       x,
       y,
@@ -343,7 +370,7 @@ export class Garden {
       bed = bedById(this.lastBedId)
     }
     const { x, y } = this.placeGrass(bed)
-    this.plants.push({
+    this.insertPlant({
       type: 'grass',
       x,
       y,
@@ -354,6 +381,26 @@ export class Garden {
     })
     this.startWilts(now)
   }
+
+  /** Keep `plants` and the per-bed y-lists in lockstep. */
+  private insertPlant(plant: Plant): void {
+    this.plants.push(plant)
+    const list = this.byBed[plant.bedId]
+    let lo = 0
+    let hi = list.length
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1
+      if (list[mid]!.y <= plant.y) lo = mid + 1
+      else hi = mid
+    }
+    list.splice(lo, 0, plant)
+  }
+}
+
+function emptyBedPlants(): Record<BedId, Plant[]> {
+  const out = {} as Record<BedId, Plant[]>
+  for (const bed of GARDEN_BEDS) out[bed.id] = []
+  return out
 }
 
 export type PlantLifeState = {

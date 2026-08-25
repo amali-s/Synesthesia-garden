@@ -3,13 +3,15 @@ import {
   DisplayAudioError,
   PitchDetector,
   displayAudioCaptureSupported,
+  noteNameFromHz,
   pitchNorm,
   type ListenMode,
 } from './audio/pitch'
 import { BloomChime } from './audio/chime'
-import { Garden, type FlowerPlant } from './garden/world'
+import { bedFromPitch, type BedId } from './garden/beds'
+import { loadBloomArt, tintedBloomCanvas } from './garden/bloomArt'
+import { Garden, plantLife, type FlowerPlant, type Plant } from './garden/world'
 import { GardenRenderer } from './garden/renderer'
-import { loadBloomArt } from './garden/bloomArt'
 import {
   downloadBlob,
   postcardFilename,
@@ -18,6 +20,13 @@ import {
 
 const LOGICAL_W = 320
 const LOGICAL_H = 200
+const UNDO_MS = 7000
+const TOUCH_INSPECT_MS = 2800
+const COMPASS_BEDS: BedId[] = ['b0', 'b1', 'b2', 'b3', 'f0', 'f1', 'f2', 'f3']
+
+function compassHtml(): string {
+  return `<div class="bed-compass" role="img" aria-label="Pitch beds, none highlighted">${COMPASS_BEDS.map((id) => `<span class="bed-cell" data-bed="${id}"></span>`).join('')}</div>`
+}
 
 const app = document.querySelector<HTMLDivElement>('#app')!
 app.innerHTML = `
@@ -26,13 +35,13 @@ app.innerHTML = `
       <div class="top-bar__primary">
         <h1 class="logo">Synesthesia Garden</h1>
         <div class="controls">
-          <button type="button" class="btn primary" id="listen-btn" aria-pressed="false">Listen</button>
-          <button type="button" class="btn" id="keep-btn" aria-label="Save garden as PNG">Keep</button>
-          <button type="button" class="btn" id="clear-btn">Clear garden</button>
+          <button type="button" class="btn primary" id="listen-btn" aria-pressed="false" aria-keyshortcuts="L">Listen</button>
+          <button type="button" class="btn ghost" id="clear-btn" aria-keyshortcuts="C">Clear garden</button>
           <div class="mode-toggle" role="group" aria-label="Listen source">
             <button type="button" class="mode-btn" id="mode-speaker" aria-pressed="true">Speaker</button>
             <button type="button" class="mode-btn" id="mode-music" aria-pressed="false">Music</button>
           </div>
+          <button type="button" class="btn" id="keep-btn" aria-label="Save garden as PNG" aria-keyshortcuts="K">Keep</button>
         </div>
       </div>
       <div class="top-bar__meter">
@@ -40,8 +49,12 @@ app.innerHTML = `
           <span class="meter-label">Pitch</span>
           <div class="meter-track"><div class="meter-fill" id="pitch-fill"></div></div>
           <span class="meter-value" id="pitch-hz">— Hz</span>
+          <span class="meter-note" id="pitch-note" aria-label="Note">—</span>
         </div>
-        <div class="status" id="status">Tap Listen to plant with your voice</div>
+        <div class="status-row">
+          <div class="status" id="status">Tap Listen to plant with your voice · hover a bloom to hear it</div>
+          <button type="button" class="btn ghost undo-btn" id="undo-btn" hidden>Undo</button>
+        </div>
       </div>
     </header>
 
@@ -50,9 +63,23 @@ app.innerHTML = `
         <div class="window-frame__glass">
           <canvas id="garden" aria-label="Pixel art garden grown from your voice or music"></canvas>
           <p class="courtyard-caption" id="courtyard-caption">A courtyard at rest</p>
+          <aside class="map-modal" id="map-modal" aria-label="Garden map">
+            <div class="bloom-inspect" id="bloom-inspect" hidden>
+              <canvas id="inspect-art" width="56" height="64" aria-hidden="true"></canvas>
+              <div class="bloom-inspect__meta">
+                <strong id="inspect-kind"></strong>
+                <span id="inspect-pitch"></span>
+              </div>
+            </div>
+            <div class="map-modal__key">
+              ${compassHtml()}
+              <p class="map-modal__legend">Low front-left → high back-right. Timbre + chroma pick kind, not register.</p>
+            </div>
+          </aside>
         </div>
       </div>
     </main>
+    <div class="sr-only" id="inspect-live" aria-live="polite" aria-atomic="true"></div>
   </div>
 `
 
@@ -60,14 +87,23 @@ const canvas = document.querySelector<HTMLCanvasElement>('#garden')!
 const listenBtn = document.querySelector<HTMLButtonElement>('#listen-btn')!
 const keepBtn = document.querySelector<HTMLButtonElement>('#keep-btn')!
 const clearBtn = document.querySelector<HTMLButtonElement>('#clear-btn')!
+const undoBtn = document.querySelector<HTMLButtonElement>('#undo-btn')!
 const modeSpeakerBtn = document.querySelector<HTMLButtonElement>('#mode-speaker')!
 const modeMusicBtn = document.querySelector<HTMLButtonElement>('#mode-music')!
 const pitchFill = document.querySelector<HTMLDivElement>('#pitch-fill')!
 const pitchHz = document.querySelector<HTMLSpanElement>('#pitch-hz')!
+const pitchNote = document.querySelector<HTMLSpanElement>('#pitch-note')!
+const compassCells = [...document.querySelectorAll<HTMLSpanElement>('.bed-cell')]
 const statusEl = document.querySelector<HTMLDivElement>('#status')!
 const windowFrame = document.querySelector<HTMLDivElement>('.window-frame')!
 const glass = document.querySelector<HTMLDivElement>('.window-frame__glass')!
 const courtyardCaption = document.querySelector<HTMLParagraphElement>('#courtyard-caption')!
+const bloomInspect = document.querySelector<HTMLDivElement>('#bloom-inspect')!
+const inspectArt = document.querySelector<HTMLCanvasElement>('#inspect-art')!
+const inspectKind = document.querySelector<HTMLElement>('#inspect-kind')!
+const inspectPitch = document.querySelector<HTMLSpanElement>('#inspect-pitch')!
+const inspectLive = document.querySelector<HTMLDivElement>('#inspect-live')!
+const mapModal = document.querySelector<HTMLElement>('#map-modal')!
 
 const garden = new Garden({ width: LOGICAL_W, height: LOGICAL_H })
 const detector = new PitchDetector()
@@ -82,6 +118,12 @@ let lastFrameNow = 0
 let hoverFlower: FlowerPlant | null = null
 /** Ignore synthesized mouse hover after a tap. */
 let suppressMouseHoverUntil = 0
+let inspectFlower: FlowerPlant | null = null
+let inspectTimer = 0
+let undoSnapshot: Plant[] | null = null
+let undoTimer = 0
+
+const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
 
 function glassBox(): { maxW: number; maxH: number } {
   return {
@@ -100,6 +142,16 @@ const renderer = new GardenRenderer(canvas, LOGICAL_W, LOGICAL_H, {
   scale: computeBackingScale(),
 })
 void loadBloomArt()
+
+function applyReducedMotion(): void {
+  const reduce = motionQuery.matches
+  chime.muted = reduce
+  renderer.reducedMotion = reduce
+  document.documentElement.classList.toggle('reduce-motion', reduce)
+}
+
+applyReducedMotion()
+motionQuery.addEventListener('change', applyReducedMotion)
 
 function fitCanvas(): void {
   renderer.setScale(computeBackingScale())
@@ -127,9 +179,9 @@ function idleStatus(): string {
     if (!displayAudioCaptureSupported()) {
       return 'This browser can’t capture tab or system audio. Use Speaker, or try Chrome or Edge.'
     }
-    return 'Play a song, then Listen and share that tab or window with audio'
+    return 'Play a song, then Listen and share that tab or window with audio · hover a bloom to hear it'
   }
-  return 'Tap Listen to plant with your voice'
+  return 'Tap Listen to plant with your voice · hover a bloom to hear it'
 }
 
 function listeningStatus(): string {
@@ -151,15 +203,29 @@ function setListeningUi(on: boolean, pending = false): void {
   listenBtn.classList.toggle('active', on)
 }
 
+function highlightCompass(id: BedId | null): void {
+  for (const cell of compassCells) {
+    cell.classList.toggle('is-on', id !== null && cell.dataset.bed === id)
+  }
+  const label = id ? `Pitch bed ${id}` : 'Pitch beds, none highlighted'
+  for (const compass of document.querySelectorAll('.bed-compass')) {
+    compass.setAttribute('aria-label', label)
+  }
+}
+
 function updateHud(hz: number | null, planted: boolean): void {
   if (hz !== null && planted) {
     const t = pitchNorm(hz, listenMode)
     pitchFill.style.width = `${Math.round(t * 100)}%`
     pitchFill.style.background = `hsl(${(350 + t * 42) % 360} ${28 + t * 44}% ${62}%)`
     pitchHz.textContent = `${Math.round(hz)} Hz`
+    pitchNote.textContent = noteNameFromHz(hz)
+    highlightCompass(bedFromPitch(t).id)
   } else {
     pitchFill.style.width = '0%'
     pitchHz.textContent = '— Hz'
+    pitchNote.textContent = '—'
+    highlightCompass(null)
   }
 }
 
@@ -167,6 +233,110 @@ function resetLivePitch(): void {
   livePitchT = null
   smoothedHz = null
   updateHud(null, false)
+}
+
+function kindLabel(kind: string): string {
+  return kind.charAt(0).toUpperCase() + kind.slice(1)
+}
+
+function hideInspect(): void {
+  if (inspectTimer) {
+    window.clearTimeout(inspectTimer)
+    inspectTimer = 0
+  }
+  inspectFlower = null
+  bloomInspect.hidden = true
+  mapModal.classList.remove('is-inspecting')
+}
+
+function showInspect(plant: FlowerPlant, now: number): void {
+  const life = plantLife(plant, now)
+  const sheet = tintedBloomCanvas(
+    plant.kind,
+    plant.hz,
+    plant.pitchT,
+    plant.timbreT,
+    life.wiltT,
+  )
+  const ctx = inspectArt.getContext('2d')
+  if (ctx && sheet) {
+    const zoom = 2
+    inspectArt.width = sheet.width * zoom
+    inspectArt.height = sheet.height * zoom
+    ctx.imageSmoothingEnabled = false
+    ctx.clearRect(0, 0, inspectArt.width, inspectArt.height)
+    ctx.drawImage(sheet, 0, 0, inspectArt.width, inspectArt.height)
+  }
+  const kind = kindLabel(plant.kind)
+  const note = noteNameFromHz(plant.hz)
+  const hzText = `${Math.round(plant.hz)} Hz`
+  inspectKind.textContent = kind
+  inspectPitch.textContent = `${hzText} · ${note}`
+  bloomInspect.hidden = false
+  mapModal.classList.add('is-inspecting')
+  const live = `${kind}, ${hzText}, ${note}`
+  if (inspectLive.textContent !== live) inspectLive.textContent = live
+  inspectFlower = plant
+}
+
+function inspectFromPointer(plant: FlowerPlant | null, pointerType: string): void {
+  const now = lastFrameNow || performance.now()
+  if (!plant) {
+    if (pointerType !== 'touch') hideInspect()
+    return
+  }
+  showInspect(plant, now)
+  if (pointerType === 'touch') {
+    if (inspectTimer) window.clearTimeout(inspectTimer)
+    inspectTimer = window.setTimeout(hideInspect, TOUCH_INSPECT_MS)
+  }
+}
+
+function dropUndo(): void {
+  undoSnapshot = null
+  if (undoTimer) {
+    window.clearTimeout(undoTimer)
+    undoTimer = 0
+  }
+  undoBtn.hidden = true
+}
+
+function scheduleUndoExpiry(): void {
+  if (undoTimer) window.clearTimeout(undoTimer)
+  undoTimer = window.setTimeout(() => {
+    dropUndo()
+  }, UNDO_MS)
+}
+
+function hasLivingFlower(): boolean {
+  return garden.plants.some((p) => p.type === 'flower')
+}
+
+function clearGarden(): void {
+  const captured = garden.plants.length > 0
+  if (captured) undoSnapshot = garden.snapshotPlants()
+  garden.clear()
+  hoverFlower = null
+  hideInspect()
+  canvas.classList.remove('is-over-bloom')
+  syncCourtyardCaption()
+  if (captured && undoSnapshot && undoSnapshot.length > 0) {
+    undoBtn.hidden = false
+    scheduleUndoExpiry()
+    if (!listening) setStatus('Garden cleared — Undo for a few seconds')
+    return
+  }
+  if (!undoSnapshot && !listening) {
+    setStatus('Garden cleared — a courtyard at rest')
+  }
+}
+
+function undoClear(): void {
+  if (!undoSnapshot) return
+  garden.restorePlants(undoSnapshot)
+  dropUndo()
+  syncCourtyardCaption()
+  if (!listening) setStatus('Garden restored')
 }
 
 function stopListen(status?: string): void {
@@ -180,6 +350,15 @@ function stopListen(status?: string): void {
   resetLivePitch()
   setListeningUi(false)
   setStatus(status ?? 'Stopped — garden is resting')
+}
+
+function toggleListen(): void {
+  if (listenBtn.disabled) return
+  if (listening) {
+    stopListen()
+    return
+  }
+  void startListen()
 }
 
 async function startListen(): Promise<void> {
@@ -243,6 +422,17 @@ async function keepPostcard(): Promise<void> {
   }
 }
 
+function isTypingTarget(el: EventTarget | null): boolean {
+  if (!(el instanceof HTMLElement)) return false
+  const tag = el.tagName
+  return (
+    tag === 'INPUT' ||
+    tag === 'TEXTAREA' ||
+    tag === 'SELECT' ||
+    el.isContentEditable
+  )
+}
+
 detector.onCaptureEnded = () => {
   listening = false
   resetLivePitch()
@@ -251,11 +441,7 @@ detector.onCaptureEnded = () => {
 }
 
 listenBtn.addEventListener('click', () => {
-  if (listening) {
-    stopListen()
-    return
-  }
-  void startListen()
+  toggleListen()
 })
 
 keepBtn.addEventListener('click', () => {
@@ -263,11 +449,29 @@ keepBtn.addEventListener('click', () => {
 })
 
 clearBtn.addEventListener('click', () => {
-  garden.clear()
-  hoverFlower = null
-  canvas.classList.remove('is-over-bloom')
-  syncCourtyardCaption()
-  setStatus('Garden cleared — a courtyard at rest')
+  clearGarden()
+})
+
+undoBtn.addEventListener('click', () => {
+  undoClear()
+})
+
+window.addEventListener('keydown', (e) => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return
+  if (isTypingTarget(e.target)) return
+  if (e.repeat) return
+  const key = e.key.toLowerCase()
+  if (key === 'l') {
+    toggleListen()
+    return
+  }
+  if (key === 'c') {
+    clearGarden()
+    return
+  }
+  if (key === 'k') {
+    void keepPostcard()
+  }
 })
 
 function pointerToLogical(e: PointerEvent): { x: number; y: number } | null {
@@ -306,6 +510,7 @@ canvas.addEventListener('pointerdown', (e) => {
   if (e.pointerType === 'touch') suppressMouseHoverUntil = performance.now() + 800
   const flower = flowerUnder(e)
   setBloomCursor(flower !== null)
+  inspectFromPointer(flower, e.pointerType)
   if (!flower) {
     hoverFlower = null
     return
@@ -322,19 +527,22 @@ canvas.addEventListener('pointermove', (e) => {
     if (!flower) hoverFlower = null
     return
   }
+  inspectFromPointer(flower, e.pointerType)
   if (flower === hoverFlower) return
   hoverFlower = flower
   if (flower) chimeFlower(flower)
 })
 
-canvas.addEventListener('pointerleave', () => {
+canvas.addEventListener('pointerleave', (e) => {
   hoverFlower = null
   setBloomCursor(false)
+  if (e.pointerType !== 'touch') hideInspect()
 })
 
 canvas.addEventListener('pointercancel', () => {
   hoverFlower = null
   setBloomCursor(false)
+  hideInspect()
 })
 
 modeSpeakerBtn.addEventListener('click', () => {
@@ -383,9 +591,19 @@ function frame(now: number): void {
     }
   }
 
+  if (undoSnapshot && hasLivingFlower()) dropUndo()
+
+  if (inspectFlower && !bloomInspect.hidden && !garden.plants.includes(inspectFlower)) {
+    hideInspect()
+  }
+
   syncCourtyardCaption()
   renderer.draw(garden, now, livePitchT)
   requestAnimationFrame(frame)
 }
 
 requestAnimationFrame(frame)
+
+if (import.meta.env.DEV) {
+  Object.assign(window, { __sg: { garden, chime, renderer } })
+}

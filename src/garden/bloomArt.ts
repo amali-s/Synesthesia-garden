@@ -70,6 +70,18 @@ function classify(r: number, g: number, b: number, a: number): 'skip' | 'keep' |
   return 'deep'
 }
 
+/** Tinted sprite for hover inspect (same paint path as the meadow). */
+export function tintedBloomCanvas(
+  kind: FlowerKind,
+  hz: number,
+  pitchT: number,
+  timbreT: number,
+  wiltT: number,
+): HTMLCanvasElement | null {
+  const pcT = hz > 0 ? pitchClassT(hz) : 0
+  return tintedSheet(kind, pcT, pitchT, timbreT, wiltT)
+}
+
 function tintedSheet(
   kind: FlowerKind,
   pcT: number,

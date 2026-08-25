@@ -2,9 +2,9 @@
 
 Living snapshot of Synesthesia Garden. Update this file at the start of a session (if the repo moved) and at the end of any phase or sizable change.
 
-**Last reviewed:** 2026-08-23 (Phase 6 Keep)  
-**Active phase:** none (Phases 1–6 done)  
-**Next recommended work:** [Phase 7 — Canvas + pitch performance](./ROADMAP.md#phase-7--canvas--pitch-performance)
+**Last reviewed:** 2026-08-24 (Phase 8 teach / a11y)  
+**Active phase:** none (Phases 1–8 done)  
+**Next recommended work:** [Phase 9 — Engineering hygiene](./ROADMAP.md#phase-9--engineering-hygiene)
 
 Plan and acceptance criteria: [`ROADMAP.md`](./ROADMAP.md)
 
@@ -12,9 +12,9 @@ Plan and acceptance criteria: [`ROADMAP.md`](./ROADMAP.md)
 
 ## What it is
 
-A pixel-art meadow that grows from **voice or music already playing on the device**: pitch, loudness, timbre, and rhythm become kind, hue, size, and motion. Speaker mode uses the microphone; Music mode captures tab/window/system audio. Autocorrelation pitch detector; flowers from pitched sound, grass from quiet. Art Nouveau frame and palette (Mucha / Tiffany jewel tones).
+A pixel-art meadow that grows from **voice or music already playing on the device**: pitch, loudness, timbre, and rhythm become kind, hue, size, and motion. Speaker mode uses the microphone; Music mode captures tab/window/system audio. YIN pitch detector (downsampled); flowers from pitched sound, grass from quiet. Art Nouveau frame and palette (Mucha / Tiffany jewel tones).
 
-Shipped loop: **Speaker or Music → Listen → flowers; pause → grass in gaps; Stop (same button); hover/tap a bloom to hear its pitch; Keep a framed PNG; Clear garden.**
+Shipped loop: **Speaker or Music → Listen → flowers; pause → grass in gaps; Stop (same button); hover/tap a bloom to hear its pitch and inspect kind + note; Keep a framed PNG; Clear garden (Undo for a few seconds).**
 
 ---
 
@@ -33,7 +33,9 @@ Shipped loop: **Speaker or Music → Listen → flowers; pause → grass in gaps
 | Duration + pan → side | **Shipped** — long vs staccato and L/R as combined x biases |
 | Section energy → depth | **Shipped** — quiet front, loud/chorus back |
 | Tempo → spawn rate | **Shipped** — BPM from inter-onset intervals; cooldown 105–480 ms |
-| Bloom chime | **Shipped** — hover (desktop) / tap (touch) plays stored `hz`; grass silent |
+| Bloom chime | **Shipped** — hover (desktop) / tap (touch) plays stored `hz`; grass silent; muted under `prefers-reduced-motion` |
+| Mapping HUD | **Shipped** — Hz + A440 note; corner map card (2×4 compass + legend); hover inspect |
+| Keyboard / a11y | **Shipped** — L / C / K; ink/brass `:focus-visible`; reduced-motion freezes sway |
 | Full-page meadow | **Shipped** — 320×200 logical, canvas fills leftover viewport |
 | Organic placement | **Shipped** — even fill of empty cells in each patch |
 | Lifecycle | **Shipped** — seed → bloom → rest; oldest wilt instead of splice |
@@ -52,26 +54,30 @@ Shipped loop: **Speaker or Music → Listen → flowers; pause → grass in gaps
 
 UI in `src/main.ts` is a full-page meadow with two listen sources (one at a time):
 
-- **Top bar** — Listen (Stop while capturing), Keep, Clear garden, **Speaker | Music**, pitch meter
+- **Top bar** — Listen (Stop while capturing), Keep, Clear garden (ghost), **Speaker | Music**, pitch meter (Hz + note)
 - **Speaker** (default) — `getUserMedia`, echo cancellation / noise suppression on, **AGC off**, vocal 80–1000 Hz
 - **Music** — `getDisplayMedia` with audio required; video track muted/ignored; echo cancel / noise suppress / AGC **off**; pitch window **50–4000 Hz** for planting *and* `pitchNorm` (so high instruments are not all clamped to the top bed). Capture is **not** played through the garden (no double audio)
-- **Listen / Stop** — one `#listen-btn` (`.btn.primary`, `aria-pressed` while capturing). Idle label **Listen** starts the selected mode; while listening the same button reads **Stop**. Disabled only during the mic/share permission wait. Switching mode while listening stops the current stream, then starts the new one. Share-ended and capture errors return the button to Listen.
-- **Keep** — one-click PNG of the vine window + glass (CSS frame composited around the live canvas). Caption “A courtyard at rest” is included only when the bed is empty. Filename `synesthesia-garden-YYYY-MM-DD.png`.
-- **Clear garden** — instant reset of plants (listen-time sky keeps going); separate from Keep
-- **Pixel garden** — 320×200 logical, integer backing scale; CSS fills the vine glass (square-pixel letterbox was tried, then dropped so the bed sits against the frame). **2×4** timber patches (`f0`–`f3` front / `b0`–`b3` back); empty visit shows gravel courtyard + “A courtyard at rest”; seven flower kinds; per-plant breeze + onset ripple; integer bloom dest sizes; green vine frame and Figma chrome
-- **Bloom chime** — hover a flower (mouse/pen) or tap (touch) plays a short sine/bell at that plant’s stored `hz`; click while hovering chimes again; one hover-chime until the pointer leaves; grass and empty soil are silent; wilted blooms still chime while on screen. Uses the same AudioContext as Listen, routed to destination (not the analyser). `BloomChime.muted` is the later reduced-motion gate; it is not wired yet.
+- **Listen / Stop** — one `#listen-btn` (`.btn.primary`, `aria-pressed` while capturing, `aria-keyshortcuts="L"`). Idle label **Listen** starts the selected mode; while listening the same button reads **Stop**. Disabled only during the mic/share permission wait. Switching mode while listening stops the current stream, then starts the new one. Share-ended and capture errors return the button to Listen. Keyboard **L** toggles the same path (ignored with Cmd/Ctrl/Alt).
+- **Keep** — one-click PNG of the vine window + glass (CSS frame composited around the live canvas). Caption “A courtyard at rest” is included only when the bed is empty. Filename `synesthesia-garden-YYYY-MM-DD.png`. Keyboard **K**.
+- **Clear garden** — ghost/secondary chrome (not Keep’s brass fill); instant reset of plants (listen-time sky keeps going); **Undo** for ~7 s from a plant snapshot; a new flower drops the snapshot. Keyboard **C**.
+- **Pitch meter** — live Hz + equal-temperament note from A440 (`A4` / `C5`); idle shows `—`
+- **Mapping card** — floating bottom-right on the meadow: 2×4 bed compass (same `bedFromPitch(pitchNorm)` as planting) + legend (low front-left → high back-right; timbre + chroma pick kind). Hover/tap a flower fills the card with a larger tinted sprite, kind name, Hz + note (chime still plays). Grass / empty soil stay silent and do not inspect.
+- **Pixel garden** — 320×200 logical, integer backing scale; CSS fills the vine glass (square-pixel letterbox was tried, then dropped so the bed sits against the frame). **2×4** timber patches (`f0`–`f3` front / `b0`–`b3` back); empty visit shows gravel courtyard + “A courtyard at rest”; seven flower kinds; per-plant breeze + onset ripple; integer bloom dest sizes; green vine frame and Figma chrome. Courtyard + timber + soil are cached offscreen and blit each frame; plants + live pitch pulse + hour gel draw on top.
+- **Bloom chime** — hover a flower (mouse/pen) or tap (touch) plays a short sine/bell at that plant’s stored `hz`; click while hovering chimes again; one hover-chime until the pointer leaves; grass and empty soil are silent; wilted blooms still chime while on screen. Uses the same AudioContext as Listen, routed to destination (not the analyser). `BloomChime.muted` follows `prefers-reduced-motion`.
+- **Reduced motion** — `matchMedia('(prefers-reduced-motion: reduce)')` freezes sway / onset pulse / seed grow and the live pitch blink; lifecycle still advances. Keyboard focus uses ink/brass `:focus-visible` rings on `.btn` / `.mode-btn`.
 
 Pitch pipeline (`src/audio/pitch.ts`):
 
-- Autocorrelation + parabolic interpolation
+- YIN (de Cheveigné) on a DC-removed, box-downsampled window (4× when Nyquist allows, else 2×/1×); parabolic tau; reused scratch buffers (no per-sample alloc)
 - Speaker: plant if RMS ≥ `0.012` and Hz in 80–1000
 - Music: plant if RMS ≥ `0.008` and Hz in 50–4000 (`isVoice` is the plant gate for both)
 - `pitchNorm` is **log2** 80–1000 Hz in Speaker, **50–4000 Hz** in Music (drives beds + mild sat/light; clamps outside)
 - `pitchClassT` is octave position from A (drives petal hue + part of kind)
+- `noteNameFromHz` is equal-temperament from A440 (HUD / inspect only; does not change beds or kind)
 - `loudnessT` log-maps RMS from the mode’s silence floor to ~0.25
 - `timbreT` log-maps spectral centroid ~200–4000 Hz
 - Onset via spectral flux and positive d(RMS)/dt (~120 ms refractory)
-- Mix layout (Phase 4): `durationMs` (reset on silence or ~3 semitone jump), `panT` from L/R RMS on display capture (center if mono / Speaker), `sectionEnergyT` (~1.45 s loudness smooth), `bpm` / `spawnScale` from inter-onset intervals, `percussive` when the spectrum is broadband and pitch is weak (`corr ≥ 0.52` always plants so sung pitch is not swallowed)
+- Mix layout (Phase 4): `durationMs` (reset on silence or ~3 semitone jump), `panT` from L/R RMS on display capture (center if mono / Speaker), `sectionEnergyT` (~1.45 s loudness smooth), `bpm` / `spawnScale` from inter-onset intervals, `percussive` when the spectrum is broadband and pitch is weak (`corr` is 1 − YIN CMND; `corr ≥ 0.52` always plants so sung pitch is not swallowed)
 
 Garden (`src/garden/world.ts`):
 
@@ -87,6 +93,7 @@ Garden (`src/garden/world.ts`):
 - Grass prefers empty neighbor cells
 - Flowers fill a patch cell by cell on a grid that spans the whole soil (stems sit low in each cell so blooms stay on the dirt). Only when every cell has a living flower does a new bloom wilt the oldest in that bed and take its cell. Garden-wide cap ~560 living plants (flowers + grass); oldest wilt/fade (~2.6 s) instead of hard splice
 - Lifecycle: seed (~0.8 s) → bloom (~12 s) → rest (droop) → wilt when over cap
+- Draw order: per-bed lists inserted by `y` (no copy-sort each frame); `hitFlowerAt` still sorts on pointer
 
 Manual checks (2026-08-15): sung scale walks kinds; quiet vs belt at one pitch → stem/bloom only; oo vs ee at one pitch → kind + contrast; staccato refreshes onset, drone does not; silence → grass.
 
@@ -99,6 +106,8 @@ Music layout (2026-08-19): stereo mix uses L/R tap (not played through the garde
 Bloom chime (2026-08-22): pointer maps canvas CSS box → backing store / `getScale()` → logical pixel. Flowers chime at stored `hz` (not the live mix); grass does not.
 
 Keep (2026-08-23): offscreen canvas composites the live meadow with a 9-slice of `vine-frame.svg` (same slice/round as CSS `border-image`). No extra dependency. Share URL and clip deferred.
+
+Mapping HUD (2026-08-24): note name beside Hz; corner card holds the 2×4 compass + legend; hover inspect reuses the tinted sprite path. Clear is ghost chrome with a few-second undo.
 
 ---
 
@@ -147,7 +156,7 @@ Done as a 2×4 timber grid + full-page shell. Picture leftovers (UI audit #1, #2
 - **Per-plant wind (#10):** hashed phase, breeze + gust, onset ripple across `x`
 - **Integer bloom sizes (#11):** `bloomPixelSize` rounds dest W/H; hit-test uses the same size
 
-Still later: soil speckles redraw every frame (Phase 7); loudness/timbre meters left the HUD when the top bar took pitch only
+Still later: loudness/timbre meters left the HUD when the top bar took pitch only
 
 ### Phase 4 — Music mix layout
 
@@ -164,7 +173,7 @@ Done. Leftovers / honest limits:
 
 - Approximate note (sine + partials), not a sample of the voice or mix
 - No chord per cluster
-- `BloomChime.muted` exists for Phase 8; chimes are not yet skipped for `prefers-reduced-motion`
+- `BloomChime.muted` follows `prefers-reduced-motion` (Phase 8)
 
 ### Phase 6 — Keep
 
@@ -176,20 +185,16 @@ Done (PNG). Leftovers / optional:
 
 ### Phase 7 — Perf
 
-- Soil speckles: per-pixel `fillRect` every frame (~320 × 112)
-- Plants copy-sorted by `y` every frame
-- Naive autocorrelation on fftSize 2048 every frame
+Done. Gravel / timber / soil / speckles / rivets blit from an offscreen 320×200 × integer-scale cache (rebuild on `setScale` / `resize` and when hour-shadow `dx,dy` steps). Hour gel stays a cheap per-frame rect. Plants insert by `y` per bed. Pitch is downsampled YIN; `corr` mapped so drums stay motion-only.
 
 ### Phase 8 — Teach / a11y
 
-UI audit #4, #5, #7, #8, #12, #15, #18:
+Done. Corner map card (legend + 2×4 compass), Hz + A440 note, hover inspect, idle chime hint (Music Share-audio copy stays), L / C / K, `:focus-visible` ink/brass rings, reduced-motion mute + frozen sway, quieter Clear with optional undo. Mapping math unchanged.
 
-- HUD shows pitch only; no legend, note name, or bed compass
-- No hover inspect (kind + Hz close-up)
-- Idle status does not teach hover-to-chime
-- Listen now has `aria-pressed`; still no `:focus-visible` or keyboard shortcuts (mode toggle does use `aria-pressed`)
-- No `prefers-reduced-motion`; `BloomChime.muted` unwired
-- Clear garden has the same visual weight as Keep (cream/brass); Listen remains the only filled green
+Leftovers / honest limits:
+
+- Inspect overlay is pointer/tap, not a keyboard-focusable dialog
+- Undo window is ~7 s and cancels on the next flower (grass alone does not)
 
 ### Phase 9 — Hygiene
 
@@ -216,8 +221,8 @@ UI audit #4, #5, #7, #8, #12, #15, #18:
 | 4 | Music mix → garden layout | Done |
 | 5 | Replay bloom as chime | Done |
 | 6 | Keep what grew (PNG / share) | Done (PNG; share URL and clip optional leftover) |
-| 7 | Canvas + pitch performance | Not started |
-| 8 | Teach the mapping + a11y | Not started |
+| 7 | Canvas + pitch performance | Done |
+| 8 | Teach the mapping + a11y | Done |
 | 9 | Engineering hygiene | Not started |
 | — | Spotify / Qobuz | Deferred (code retained) |
 
@@ -226,14 +231,14 @@ UI audit #4, #5, #7, #8, #12, #15, #18:
 ## Layout (as of last review)
 
 ```
-src/main.ts                 UI + rAF loop (Speaker/Music top bar + meadow + bloom pointer + Keep)
-src/audio/pitch.ts          Detector + mic / display capture + mix layout (pan, duration, tempo, drums)
+src/main.ts                 UI + rAF loop (Speaker/Music top bar + meadow + mapping card + bloom pointer + Keep)
+src/audio/pitch.ts          Detector (YIN) + mic / display capture + mix layout (pan, duration, tempo, drums)
 src/audio/chime.ts          Short bloom tone at stored hz (shared AudioContext)
 src/audio/songPlayer.ts     Unused by UI
 src/audio/spotifyUrl.ts     Unused by UI
 src/audio/qobuzUrl.ts       Unused by UI
-src/garden/world.ts         Clusters, mix-layout x/y, tempo cooldown, gap grass, lifecycle, bloom hit-test
-src/garden/renderer.ts      Full-scene draw; gravel courtyard; hour gel; per-plant wind
+src/garden/world.ts         Clusters, mix-layout x/y, tempo cooldown, gap grass, lifecycle, bloom hit-test, per-bed y-insert
+src/garden/renderer.ts      Full-scene draw; cached courtyard/beds; hour gel; per-plant wind
 src/garden/postcard.ts      Framed PNG composite (vine 9-slice + glass)
 src/garden/sprites.ts       Pixel flowers / grass (life + wilt)
 src/garden/palette.ts       GROUND + ACCENTS + punchier bloom walk + hour gel

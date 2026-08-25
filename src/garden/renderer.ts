@@ -18,9 +18,16 @@ const ONSET_PULSE_MS = 200
 export class GardenRenderer {
   private canvas: HTMLCanvasElement
   private ctx: CanvasRenderingContext2D
+  private bgCanvas: HTMLCanvasElement
+  private bgCtx: CanvasRenderingContext2D
   private scale: number
   private logicalW: number
   private logicalH: number
+  private bgDirty = true
+  private bgShadowDx = NaN
+  private bgShadowDy = NaN
+  /** Freeze decorative sway / grow / onset pulse; lifecycle still advances. */
+  reducedMotion = false
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -32,6 +39,10 @@ export class GardenRenderer {
     const ctx = canvas.getContext('2d')
     if (!ctx) throw new Error('Canvas 2D unavailable')
     this.ctx = ctx
+    this.bgCanvas = document.createElement('canvas')
+    const bgCtx = this.bgCanvas.getContext('2d')
+    if (!bgCtx) throw new Error('Canvas 2D unavailable')
+    this.bgCtx = bgCtx
     this.scale = opts.scale
     this.logicalW = logicalW
     this.logicalH = logicalH
@@ -51,23 +62,22 @@ export class GardenRenderer {
     this.canvas.width = this.logicalW * this.scale
     this.canvas.height = this.logicalH * this.scale
     this.ctx.imageSmoothingEnabled = false
+    this.bgDirty = true
   }
 
   draw(garden: Garden, now: number, livePitchT: number | null): void {
     const { ctx, scale, logicalW } = this
-    this.drawCourtyard()
+    this.ensureBackground(garden.listenMs)
+    ctx.drawImage(this.bgCanvas, 0, 0)
 
     for (const bed of bedsBackToFront()) {
-      this.drawBed(bed, garden.listenMs)
-      const inBed = garden.plants.filter((p) => p.bedId === bed.id)
-      inBed.sort((a, b) => a.y - b.y)
-      for (const plant of inBed) {
+      for (const plant of garden.plantsInBed(bed.id)) {
         this.drawPlant(plant, now, garden.lastOnset)
       }
     }
 
     if (livePitchT !== null) {
-      const pulse = 0.5 + 0.5 * Math.sin(now / 120)
+      const pulse = this.reducedMotion ? 1 : 0.5 + 0.5 * Math.sin(now / 120)
       const size = 2 + Math.round(pulse * 2)
       const bed = GARDEN_BEDS.find(
         (b) => livePitchT >= b.pitch0 && livePitchT < b.pitch1,
@@ -81,13 +91,48 @@ export class GardenRenderer {
     this.drawHourGel(garden.listenMs)
   }
 
+  private ensureBackground(listenMs: number): void {
+    const { dx, dy } = hourShadowOffsetForListenMs(listenMs)
+    const w = this.logicalW * this.scale
+    const h = this.logicalH * this.scale
+    if (
+      !this.bgDirty &&
+      this.bgCanvas.width === w &&
+      this.bgCanvas.height === h &&
+      dx === this.bgShadowDx &&
+      dy === this.bgShadowDy
+    ) {
+      return
+    }
+    this.rebuildBackground(dx, dy)
+  }
+
+  private rebuildBackground(dx: number, dy: number): void {
+    const w = this.logicalW * this.scale
+    const h = this.logicalH * this.scale
+    if (this.bgCanvas.width !== w || this.bgCanvas.height !== h) {
+      this.bgCanvas.width = w
+      this.bgCanvas.height = h
+    }
+    this.bgCtx.imageSmoothingEnabled = false
+    this.drawCourtyard(this.bgCtx)
+    for (const bed of bedsBackToFront()) {
+      this.drawBed(this.bgCtx, bed, dx, dy)
+    }
+    this.bgShadowDx = dx
+    this.bgShadowDy = dy
+    this.bgDirty = false
+  }
+
   private drawPlant(plant: Plant, now: number, lastOnset: number): void {
     const { ctx, scale, logicalW } = this
     const life = plantLife(plant, now)
     const age = (now - plant.born) / 1000
     const variant = plant.type === 'grass' ? plant.variant : 0
-    const sway = plantSway(now, plant.x, plant.y, variant)
-    const onsetPulse = onsetRipple(now, lastOnset, plant.x, logicalW)
+    const reduce = this.reducedMotion
+    const sway = reduce ? 0 : plantSway(now, plant.x, plant.y, variant)
+    const onsetPulse = reduce ? 0 : onsetRipple(now, lastOnset, plant.x, logicalW)
+    const grow = reduce ? 1 : life.grow
     if (plant.type === 'grass') {
       drawGrass(
         ctx,
@@ -96,7 +141,7 @@ export class GardenRenderer {
         scale,
         plant.variant,
         sway,
-        life.grow,
+        grow,
         life.wiltT,
         onsetPulse,
       )
@@ -118,31 +163,44 @@ export class GardenRenderer {
       life.wiltT,
       plant.baseHue,
       plant.hz,
+      reduce,
     )
   }
 
-  private fillPx(x: number, y: number, color: string): void {
-    const { ctx, scale } = this
+  private fillPx(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    color: string,
+  ): void {
+    const { scale } = this
     ctx.fillStyle = color
     ctx.fillRect(x * scale, y * scale, scale, scale)
   }
 
-  private fillRect(x: number, y: number, w: number, h: number, color: string): void {
-    const { ctx, scale } = this
+  private fillRect(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    color: string,
+  ): void {
+    const { scale } = this
     ctx.fillStyle = color
     ctx.fillRect(x * scale, y * scale, w * scale, h * scale)
   }
 
-  private drawCourtyard(): void {
+  private drawCourtyard(ctx: CanvasRenderingContext2D): void {
     const { logicalW, logicalH } = this
-    this.fillRect(0, 0, logicalW, logicalH, GROUND.gravel)
+    this.fillRect(ctx, 0, 0, logicalW, logicalH, GROUND.gravel)
     for (let y = 0; y < logicalH; y++) {
       for (let x = 0; x < logicalW; x++) {
         if (inTimber(x, y)) continue
         const n = (x * 11 + y * 19) % 23
-        if (n === 0) this.fillPx(x, y, GROUND.gravelDark)
-        else if (n === 7) this.fillPx(x, y, GROUND.gravelLight)
-        else if (n === 14) this.fillPx(x, y, GROUND.patina)
+        if (n === 0) this.fillPx(ctx, x, y, GROUND.gravelDark)
+        else if (n === 7) this.fillPx(ctx, x, y, GROUND.gravelLight)
+        else if (n === 14) this.fillPx(ctx, x, y, GROUND.patina)
       }
     }
   }
@@ -158,54 +216,58 @@ export class GardenRenderer {
     ctx.imageSmoothingEnabled = false
   }
 
-  private drawBed(bed: GardenBed, listenMs: number): void {
+  private drawBed(
+    ctx: CanvasRenderingContext2D,
+    bed: GardenBed,
+    dx: number,
+    dy: number,
+  ): void {
     const t = bed.timber
     const d = bed.depth
     const ox = bed.x
     const oy = bed.y
     const ow = bed.w
     const oh = bed.h
-    const { dx, dy } = hourShadowOffsetForListenMs(listenMs)
 
-    this.fillRect(ox + dx, oy + dy, ow, oh, GROUND.timberShadow)
+    this.fillRect(ctx, ox + dx, oy + dy, ow, oh, GROUND.timberShadow)
 
-    this.fillRect(ox, oy, ow, oh, GROUND.timberDark)
-    this.fillRect(ox + 1, oy + 1, ow - 2, oh - d - 1, GROUND.timber)
-    this.fillRect(ox, oy, ow, 1, GROUND.timberLite)
-    this.fillRect(ox, oy, 1, oh, GROUND.timberLite)
-    this.fillRect(ox, oy + oh - d, ow, d, ACCENTS.planterLedge)
+    this.fillRect(ctx, ox, oy, ow, oh, GROUND.timberDark)
+    this.fillRect(ctx, ox + 1, oy + 1, ow - 2, oh - d - 1, GROUND.timber)
+    this.fillRect(ctx, ox, oy, ow, 1, GROUND.timberLite)
+    this.fillRect(ctx, ox, oy, 1, oh, GROUND.timberLite)
+    this.fillRect(ctx, ox, oy + oh - d, ow, d, ACCENTS.planterLedge)
 
-    this.fillRect(ox, oy, ow, 1, ACCENTS.planterStroke)
-    this.fillRect(ox, oy, 1, oh, ACCENTS.planterStroke)
-    this.fillRect(ox + ow - 1, oy, 1, oh, ACCENTS.planterStroke)
-    this.fillRect(ox, oy + oh - 1, ow, 1, ACCENTS.planterStroke)
-    this.fillRect(ox, oy + oh - d, ow, 1, ACCENTS.planterStroke)
+    this.fillRect(ctx, ox, oy, ow, 1, ACCENTS.planterStroke)
+    this.fillRect(ctx, ox, oy, 1, oh, ACCENTS.planterStroke)
+    this.fillRect(ctx, ox + ow - 1, oy, 1, oh, ACCENTS.planterStroke)
+    this.fillRect(ctx, ox, oy + oh - 1, ow, 1, ACCENTS.planterStroke)
+    this.fillRect(ctx, ox, oy + oh - d, ow, 1, ACCENTS.planterStroke)
 
-    this.fillPx(ox + 2, oy + 2, GROUND.brass)
-    this.fillPx(ox + ow - 3, oy + 2, GROUND.brass)
-    this.fillPx(ox + 2, oy + oh - d - 2, GROUND.brass)
-    this.fillPx(ox + ow - 3, oy + oh - d - 2, GROUND.brass)
-    this.fillPx(ox + 3, oy + 2, ACCENTS.rivetStroke)
-    this.fillPx(ox + ow - 2, oy + 2, ACCENTS.rivetStroke)
-    this.fillPx(ox + 3, oy + oh - d - 2, ACCENTS.rivetStroke)
-    this.fillPx(ox + ow - 2, oy + oh - d - 2, ACCENTS.rivetStroke)
+    this.fillPx(ctx, ox + 2, oy + 2, GROUND.brass)
+    this.fillPx(ctx, ox + ow - 3, oy + 2, GROUND.brass)
+    this.fillPx(ctx, ox + 2, oy + oh - d - 2, GROUND.brass)
+    this.fillPx(ctx, ox + ow - 3, oy + oh - d - 2, GROUND.brass)
+    this.fillPx(ctx, ox + 3, oy + 2, ACCENTS.rivetStroke)
+    this.fillPx(ctx, ox + ow - 2, oy + 2, ACCENTS.rivetStroke)
+    this.fillPx(ctx, ox + 3, oy + oh - d - 2, ACCENTS.rivetStroke)
+    this.fillPx(ctx, ox + ow - 2, oy + oh - d - 2, ACCENTS.rivetStroke)
 
     const sx = ox + t
     const sy = oy + t
     const sw = ow - t * 2
     const sh = oh - t - d
-    this.fillRect(sx, sy, sw, sh, GROUND.bedSoil)
+    this.fillRect(ctx, sx, sy, sw, sh, GROUND.bedSoil)
     for (let y = sy; y < sy + sh; y++) {
       for (let x = sx; x < sx + sw; x++) {
         const n = (x * 13 + y * 7) % 17
-        if (n === 0) this.fillPx(x, y, GROUND.bedSoilDark)
-        else if (n === 8) this.fillPx(x, y, GROUND.bedSoilLight)
+        if (n === 0) this.fillPx(ctx, x, y, GROUND.bedSoilDark)
+        else if (n === 8) this.fillPx(ctx, x, y, GROUND.bedSoilLight)
       }
     }
-    this.fillRect(sx, sy, sw, 1, ACCENTS.soilOutline)
-    this.fillRect(sx, sy + sh - 1, sw, 1, ACCENTS.soilOutline)
-    this.fillRect(sx, sy, 1, sh, ACCENTS.soilOutline)
-    this.fillRect(sx + sw - 1, sy, 1, sh, ACCENTS.soilOutline)
+    this.fillRect(ctx, sx, sy, sw, 1, ACCENTS.soilOutline)
+    this.fillRect(ctx, sx, sy + sh - 1, sw, 1, ACCENTS.soilOutline)
+    this.fillRect(ctx, sx, sy, 1, sh, ACCENTS.soilOutline)
+    this.fillRect(ctx, sx + sw - 1, sy, 1, sh, ACCENTS.soilOutline)
   }
 }
 

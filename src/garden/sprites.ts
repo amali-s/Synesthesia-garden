@@ -96,8 +96,9 @@ export function drawFlower(
   wiltT = 0,
   _baseHue?: number,
   hz?: number,
+  reducedMotion = false,
 ): void {
-  const grow = Math.min(1, age / 0.8)
+  const grow = reducedMotion ? 1 : Math.min(1, age / 0.8)
   drawBloomArt(
     ctx,
     gx,

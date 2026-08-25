@@ -61,8 +61,9 @@ export class DisplayAudioError extends Error {
 type SourceKind = 'none' | 'mic' | 'display' | 'media'
 
 /**
- * Autocorrelation pitch detector tuned for vocal fundamentals.
+ * YIN pitch detector (downsampled) tuned for vocal fundamentals.
  * Accepts microphone, display/tab audio, or any AudioNode / media element source.
+ * `corr` is 1 − YIN CMND so the 0.52 percussion plant-gate still holds.
  */
 export class PitchDetector {
   private ctx: AudioContext
@@ -77,6 +78,9 @@ export class PitchDetector {
   private buf: Float32Array
   private freqBuf: Float32Array
   private prevLin: Float32Array
+  private yinBuf: Float32Array
+  private yinDiff: Float32Array
+  private yinCmnd: Float32Array
   private prevRms = 0
   private fluxMean = 0
   private lastOnsetTime = -1
@@ -104,6 +108,9 @@ export class PitchDetector {
     this.buf = new Float32Array(this.analyser.fftSize)
     this.freqBuf = new Float32Array(this.analyser.frequencyBinCount)
     this.prevLin = new Float32Array(this.analyser.frequencyBinCount)
+    this.yinBuf = new Float32Array(this.analyser.fftSize)
+    this.yinDiff = new Float32Array(this.analyser.fftSize)
+    this.yinCmnd = new Float32Array(this.analyser.fftSize)
   }
 
   get audioContext(): AudioContext {
@@ -328,7 +335,15 @@ export class PitchDetector {
     const music = this.kind === 'display' || this.kind === 'media'
     const minHz = music ? MUSIC_MIN_HZ : VOCAL_MIN_HZ
     const maxHz = music ? MUSIC_MAX_HZ : VOCAL_MAX_HZ
-    const pitched = detectPitchHz(this.buf, this.ctx.sampleRate, minHz, maxHz)
+    const pitched = detectPitchHz(
+      this.buf,
+      this.ctx.sampleRate,
+      minHz,
+      maxHz,
+      this.yinBuf,
+      this.yinDiff,
+      this.yinCmnd,
+    )
     const hz = pitched && pitched.hz >= minHz && pitched.hz <= maxHz ? pitched.hz : null
     const corr = pitched?.corr ?? 0
     const percussive = this.isPercussive({
@@ -601,68 +616,115 @@ function rootMeanSquare(buf: Float32Array): number {
   return Math.sqrt(sum / buf.length)
 }
 
+/** Classic YIN absolute threshold (CMND). First dip below this is the period. */
+const YIN_ABS_THRESHOLD = 0.1
+/** Same plant floor as the old ACF (`bestCorr < 0.35` → no pitch). */
+const YIN_MIN_CORR = 0.35
+
 /**
- * Autocorrelation with parabolic interpolation.
- * Returns fundamental frequency in Hz, or null if unclear.
+ * Keep Nyquist at least 2.5× maxHz so Music 4 kHz still has a few samples/cycle.
+ * Speaker 1 kHz at 48 kHz → 4×; a 16 kHz mic on a 4 kHz window stays 1×.
+ */
+function downsampleFactor(sampleRate: number, maxHz: number): number {
+  const need = maxHz * 2.5
+  if (sampleRate / 4 >= need) return 4
+  if (sampleRate / 2 >= need) return 2
+  return 1
+}
+
+/**
+ * YIN (de Cheveigné & Kawahara) on a downsampled, DC-removed buffer.
+ * Reuses `down` / `diff` / `cmnd`. `corr` is 1 − CMND (ACF-like, for drums).
  */
 function detectPitchHz(
   buf: Float32Array,
   sampleRate: number,
   minHz: number,
   maxHz: number,
+  down: Float32Array,
+  diff: Float32Array,
+  cmnd: Float32Array,
 ): { hz: number; corr: number } | null {
-  const size = buf.length
-  const minLag = Math.floor(sampleRate / maxHz)
-  const maxLag = Math.floor(sampleRate / minHz)
+  const factor = downsampleFactor(sampleRate, maxHz)
+  const n = Math.floor(buf.length / factor)
+  if (n < 32) return null
+  const sr = sampleRate / factor
 
   let mean = 0
-  for (let i = 0; i < size; i++) mean += buf[i]!
-  mean /= size
-
-  const signal = new Float32Array(size)
-  for (let i = 0; i < size; i++) signal[i] = buf[i]! - mean
-
-  let bestLag = -1
-  let bestCorr = 0
-  let prevCorr = 1
+  for (let i = 0; i < n; i++) {
+    let s = 0
+    const base = i * factor
+    for (let k = 0; k < factor; k++) s += buf[base + k]!
+    const v = s / factor
+    down[i] = v
+    mean += v
+  }
+  mean /= n
 
   let energy = 0
-  for (let i = 0; i < size; i++) energy += signal[i]! * signal[i]!
+  for (let i = 0; i < n; i++) {
+    const v = down[i]! - mean
+    down[i] = v
+    energy += v * v
+  }
   if (energy < 1e-8) return null
 
-  for (let lag = minLag; lag <= maxLag; lag++) {
-    let corr = 0
-    for (let i = 0; i < size - lag; i++) {
-      corr += signal[i]! * signal[i + lag]!
-    }
-    corr /= energy
+  const minTau = Math.max(2, Math.floor(sr / maxHz))
+  const maxTau = Math.min(n >> 1, Math.floor(sr / minHz))
+  if (maxTau <= minTau + 2) return null
 
-    if (corr > 0.3 && corr > prevCorr && corr > bestCorr) {
-      bestCorr = corr
-      bestLag = lag
+  diff[0] = 0
+  for (let tau = 1; tau <= maxTau; tau++) {
+    let sum = 0
+    const last = n - tau
+    for (let j = 0; j < last; j++) {
+      const d = down[j]! - down[j + tau]!
+      sum += d * d
     }
-    prevCorr = corr
+    diff[tau] = sum
   }
 
-  if (bestLag < 0 || bestCorr < 0.35) return null
-
-  const y0 = correlateAt(signal, energy, bestLag - 1)
-  const y1 = bestCorr
-  const y2 = correlateAt(signal, energy, bestLag + 1)
-  const denom = 2 * (2 * y1 - y0 - y2)
-  const shift = denom !== 0 ? (y0 - y2) / denom : 0
-  const refinedLag = bestLag + shift
-
-  return { hz: sampleRate / refinedLag, corr: bestCorr }
-}
-
-function correlateAt(signal: Float32Array, energy: number, lag: number): number {
-  if (lag < 1 || lag >= signal.length) return 0
-  let corr = 0
-  for (let i = 0; i < signal.length - lag; i++) {
-    corr += signal[i]! * signal[i + lag]!
+  cmnd[0] = 1
+  let running = 0
+  for (let tau = 1; tau <= maxTau; tau++) {
+    running += diff[tau]!
+    cmnd[tau] = running > 0 ? (diff[tau]! * tau) / running : 1
   }
-  return corr / energy
+
+  let tauEst = -1
+  for (let tau = minTau; tau <= maxTau; tau++) {
+    if (cmnd[tau]! < YIN_ABS_THRESHOLD) {
+      while (tau + 1 <= maxTau && cmnd[tau + 1]! < cmnd[tau]!) tau++
+      tauEst = tau
+      break
+    }
+  }
+
+  if (tauEst < 0) {
+    let best = 1
+    for (let tau = minTau; tau <= maxTau; tau++) {
+      const v = cmnd[tau]!
+      if (v < best) {
+        best = v
+        tauEst = tau
+      }
+    }
+  }
+
+  if (tauEst < minTau || tauEst > maxTau) return null
+
+  const corr = Math.max(0, Math.min(1, 1 - cmnd[tauEst]!))
+  if (corr < YIN_MIN_CORR) return null
+
+  const y0 = tauEst > 0 ? cmnd[tauEst - 1]! : cmnd[tauEst]!
+  const y1 = cmnd[tauEst]!
+  const y2 = tauEst < maxTau ? cmnd[tauEst + 1]! : cmnd[tauEst]!
+  const denom = y0 - 2 * y1 + y2
+  const shift = denom !== 0 ? (y0 - y2) / (2 * denom) : 0
+  const refined = tauEst + shift
+  if (refined < 1) return null
+
+  return { hz: sr / refined, corr }
 }
 
 function logNorm(value: number, min: number, max: number): number {
@@ -681,6 +743,17 @@ export function pitchNorm(hz: number, mode: ListenMode = 'speaker'): number {
 export function pitchClassT(hz: number): number {
   const semitones = 12 * Math.log2(Math.max(hz, 1) / 440)
   return (((semitones % 12) + 12) % 12) / 12
+}
+
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const
+
+/** Equal-temperament name from A440, e.g. A4 / C5. Mapping math is unchanged. */
+export function noteNameFromHz(hz: number): string {
+  if (!Number.isFinite(hz) || hz <= 0) return '—'
+  const midi = Math.round(69 + 12 * Math.log2(hz / 440))
+  const name = NOTE_NAMES[((midi % 12) + 12) % 12]!
+  const octave = Math.floor(midi / 12) - 1
+  return `${name}${octave}`
 }
 
 /** Map RMS into 0–1 from silence up to a belt */
