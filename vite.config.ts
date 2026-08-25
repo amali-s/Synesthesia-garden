@@ -1,6 +1,4 @@
 import { defineConfig, loadEnv } from 'vite'
-import { spotifyApiPlugin } from './vite-plugin-spotify-api'
-import { qobuzApiPlugin } from './vite-plugin-qobuz-api'
 
 // GitHub Pages serves under /Synesthesia-garden/; Vercel uses root.
 export default defineConfig(({ mode }) => {
@@ -11,7 +9,10 @@ export default defineConfig(({ mode }) => {
 
   return {
     base: process.env.VERCEL ? '/' : '/Synesthesia-garden/',
-    // Spotify is active now; Qobuz middleware stays for later.
-    plugins: [spotifyApiPlugin(), qobuzApiPlugin()],
+    // Spotify and Qobuz are deferred (see ROADMAP "Later"), so their dev
+    // middleware stays unregistered while the UI is hidden. The plugins live in
+    // `vite-plugin-spotify-api.ts` / `vite-plugin-qobuz-api.ts` if we bring the
+    // streaming UI back. Listen needs no secrets.
+    plugins: [],
   }
 })

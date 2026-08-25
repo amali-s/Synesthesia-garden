@@ -1,0 +1,32 @@
+{
+  /* Node/Vercel side: serverless functions, Vite config, dev middleware.
+     Kept separate from tsconfig.json so the browser `src` build never sees
+     Node globals. Both configs run in `npm run build`. */
+  "compilerOptions": {
+    "target": "es2023",
+    "module": "esnext",
+    "lib": ["ES2023"],
+    "types": ["node"],
+    "skipLibCheck": true,
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+
+    /* Linting */
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": [
+    "api",
+    "vite.config.ts",
+    "vitest.config.ts",
+    "vite-plugin-spotify-api.ts",
+    "vite-plugin-qobuz-api.ts"
+  ]
+}

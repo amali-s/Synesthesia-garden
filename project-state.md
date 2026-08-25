@@ -2,9 +2,9 @@
 
 Living snapshot of Synesthesia Garden. Update this file at the start of a session (if the repo moved) and at the end of any phase or sizable change.
 
-**Last reviewed:** 2026-08-24 (Phase 8 teach / a11y)  
-**Active phase:** none (Phases 1–8 done)  
-**Next recommended work:** [Phase 9 — Engineering hygiene](./ROADMAP.md#phase-9--engineering-hygiene)
+**Last reviewed:** 2026-08-25 (Phase 9 engineering hygiene)  
+**Active phase:** none (Phases 1–9 done)  
+**Next recommended work:** [Later / deferred craft](./ROADMAP.md#later--deferred) — one frame language, growth-stage sheets, share URL / clip, PWA
 
 Plan and acceptance criteria: [`ROADMAP.md`](./ROADMAP.md)
 
@@ -41,11 +41,12 @@ Shipped loop: **Speaker or Music → Listen → flowers; pause → grass in gaps
 | Lifecycle | **Shipped** — seed → bloom → rest; oldest wilt instead of splice |
 | Listen-time sky | **Shipped** — low-opacity hour gel on the canvas (cool → bright → warm; Pause holds; Clear keeps the clock) |
 | Postcard PNG | **Shipped** — Keep downloads a framed vine-glass PNG (`synesthesia-garden-YYYY-MM-DD.png`); empty courtyard keeps the caption; plants hide it |
-| Local file / song playback | **Deferred** — `SongPlayer` + CSS exist, not in `main.ts` (see Later) |
-| Spotify previews | **Hidden** — API + Vite plugin exist; UI gone |
-| Qobuz streaming | **Hidden / deferred** — API + Vite plugin exist; UI gone |
+| Local file / song playback | **Deferred** — `SongPlayer` exists, not in `main.ts`; its old centered CSS was deleted in Phase 9 (see Later) |
+| Spotify previews | **Hidden** — API + plugin file exist; UI gone and dev middleware no longer registered |
+| Qobuz streaming | **Hidden / deferred** — API + plugin file exist; UI gone and dev middleware no longer registered |
 | Export / share | **PNG shipped** — share URL/seed and GIF/WebM not started (optional) |
-| Tests | **None** |
+| Tests | **Shipped** — Vitest; `npm test` covers `pitchNorm`, `Garden.ingest`, URL parsers (38 tests) |
+| Typecheck | **Shipped** — `npm run build` runs `tsconfig.json` (`src`) **and** `tsconfig.node.json` (`api/`, Vite config, dev plugins) |
 | Deploy | GitHub Pages (`base: /Synesthesia-garden/`) or Vercel (`VERCEL` → `/`) |
 
 ---
@@ -109,6 +110,8 @@ Keep (2026-08-23): offscreen canvas composites the live meadow with a 9-slice of
 
 Mapping HUD (2026-08-24): note name beside Hz; corner card holds the 2×4 compass + legend; hover inspect reuses the tinted sprite path. Clear is ghost chrome with a few-second undo.
 
+Hygiene smoke (2026-08-25): after the dead-CSS deletes, a synthetic sawtooth sweep (110–784 Hz) fed through the real Speaker path planted across seven beds with mixed kinds per patch; 788 Hz inspected as Star / G5 in the back-right bed, matching `bedFromPitch`. Listen/Stop, L / C / K, hover chime + inspect, Keep (595 kB PNG, `synesthesia-garden-2026-08-25.png`), Clear → Undo → "Garden restored", the Music share-audio copy, and the ink `:focus-visible` ring all survived. `/api/spotify-preview` and `/api/qobuz-*` return 404 in dev.
+
 ---
 
 ## Built but not in the product
@@ -119,12 +122,11 @@ These files are in the tree; the live UI does not use them.
 | --- | --- | --- |
 | Song player | `src/audio/songPlayer.ts` | File or URL → `PitchDetector.attachMediaElement` |
 | Media / node tap | `PitchDetector` | `attachMediaElement`, `connectSource` unused by `main.ts` |
-| Song form / playback CSS | `src/style.css` | `.song-form`, `.playback`, `.file-btn` |
-| Spotify URL + resolve | `src/audio/spotifyUrl.ts`, `api/spotify-preview.ts` | 30s preview |
-| Qobuz URL + stream | `src/audio/qobuzUrl.ts`, `api/qobuz-resolve.ts`, `api/qobuz-stream.ts` | Full-track; ToS risk |
-| Dev middleware | `vite-plugin-spotify-api.ts`, `vite-plugin-qobuz-api.ts` | Still loaded in `vite.config.ts` |
+| Spotify URL + resolve | `src/audio/spotifyUrl.ts`, `api/spotify-preview.ts` | 30s preview; parser covered by tests |
+| Qobuz URL + stream | `src/audio/qobuzUrl.ts`, `api/qobuz-resolve.ts`, `api/qobuz-stream.ts` | Full-track; ToS risk; parser covered by tests |
+| Dev middleware | `vite-plugin-spotify-api.ts`, `vite-plugin-qobuz-api.ts` | On disk, **not registered** in `vite.config.ts` (Phase 9) |
 
-`.env.example` says streaming is hidden and Listen needs no secrets. That matches the UI, not Vite (plugins still register).
+`.env.example`, `README.md`, and `vite.config.ts` now agree: streaming is hidden and Listen needs no secrets. The song form / playback CSS was deleted in Phase 9 — re-wiring `SongPlayer` means writing new chrome that matches the top bar, not reviving the old centered panel.
 
 ---
 
@@ -198,11 +200,20 @@ Leftovers / honest limits:
 
 ### Phase 9 — Hygiene
 
-- `tsconfig.json` `include` is `["src"]` — `api/` and Vite plugins are not in `npm run build` typecheck
-- README still describes the old centered layout, not the full-page meadow
-- `vite.config.ts` comment (“Spotify is active now”) disagrees with README and `.env.example`
-- **UI audit #17:** leftover `.song-form` / `.playback` / rounded HUD CSS
-- Fonts are already local (Wittgenstein + VCR); drop stale Google Fonts notes in the roadmap (done in ROADMAP.md)
+Done. Shipped 2026-08-25:
+
+- **Vite plugins:** `spotifyApiPlugin()` / `qobuzApiPlugin()` are no longer registered. `npm run dev` returns 404 for `/api/spotify-preview`, `/api/qobuz-resolve`, `/api/qobuz-stream`; the plugin files stay on disk with a Later comment in `vite.config.ts`.
+- **Typecheck:** new `tsconfig.node.json` covers `api/**`, `vite.config.ts`, `vitest.config.ts`, and both dev plugins (Node types, no DOM). `npm run typecheck` runs both configs and `npm run build` calls it, so a broken handler fails the build.
+- **Tests:** Vitest (`npm test`, `npm run test:watch`), 38 tests in `src/**/*.test.ts` — `pitchNorm` (both windows, clamps, constant per-octave step), `Garden.ingest` (plant, cooldown, bed split, grass after a pause, drums plant nothing, clear / listen clock / undo), and both URL parsers. No network, canvas, or Vite-plugin tests.
+- **Dead HUD CSS (UI audit #17):** deleted `.hud`, `.meters`, `.file-btn`, `.song-*`, `.playback*`, `.hint`, `@keyframes rise`, the rounded gold radii that came with them, and the `:root` tokens only those rules used. Live chrome untouched.
+- **Fonts:** both `@font-face` faces are live and local; no CDN, `@import`, or stale Google Fonts comment anywhere in the tree.
+- **README + `index.html`:** rewritten for the Speaker/Music meadow, the honest Music limits, real scripts, and the two deploy base paths.
+
+Leftovers / honest limits:
+
+- Tests are not wired into CI; `npm run build` is typecheck + Vite only
+- A few declared-but-unused CSS colors were removed with the dead rules; `palette.ts` remains the source of truth for canvas color
+- Browser smoke used a synthetic oscillator stream in place of the mic (no automated browser test)
 
 ### Later (UI audit #13, #14)
 
@@ -223,8 +234,8 @@ Leftovers / honest limits:
 | 6 | Keep what grew (PNG / share) | Done (PNG; share URL and clip optional leftover) |
 | 7 | Canvas + pitch performance | Done |
 | 8 | Teach the mapping + a11y | Done |
-| 9 | Engineering hygiene | Not started |
-| — | Spotify / Qobuz | Deferred (code retained) |
+| 9 | Engineering hygiene | Done |
+| — | Spotify / Qobuz | Deferred (code retained, middleware unregistered) |
 
 ---
 
@@ -242,8 +253,12 @@ src/garden/renderer.ts      Full-scene draw; cached courtyard/beds; hour gel; pe
 src/garden/postcard.ts      Framed PNG composite (vine 9-slice + glass)
 src/garden/sprites.ts       Pixel flowers / grass (life + wilt)
 src/garden/palette.ts       GROUND + ACCENTS + punchier bloom walk + hour gel
+src/**/*.test.ts            Vitest: pitch mapping, garden ingest, URL parsers
 api/                        Vercel functions (hidden features)
-vite-plugin-*-api.ts        Dev stubs for those APIs
+vite-plugin-*-api.ts        Dev stubs for those APIs (not registered)
+tsconfig.json               Browser typecheck (src)
+tsconfig.node.json          Node typecheck (api, vite/vitest config, dev plugins)
+vitest.config.ts            Node environment, src/**/*.test.ts only
 ```
 
 ---
