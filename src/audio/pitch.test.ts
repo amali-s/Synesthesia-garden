@@ -1,11 +1,33 @@
 import { describe, expect, it } from 'vitest'
+import { bedFromPitch } from '../garden/beds'
 import {
+  MUSIC_BED_MAX_HZ,
+  MUSIC_BED_MIN_HZ,
   MUSIC_MAX_HZ,
   MUSIC_MIN_HZ,
   VOCAL_MAX_HZ,
   VOCAL_MIN_HZ,
   pitchNorm,
+  yinPitchHz,
 } from './pitch'
+
+function harmonicTone(
+  fundamentalHz: number,
+  sampleRate: number,
+  n: number,
+  overtones: number[],
+): Float32Array {
+  const buf = new Float32Array(n)
+  const w = (2 * Math.PI) / sampleRate
+  for (let i = 0; i < n; i++) {
+    let s = Math.sin(w * fundamentalHz * i)
+    for (let h = 0; h < overtones.length; h++) {
+      s += overtones[h]! * Math.sin(w * fundamentalHz * (h + 2) * i)
+    }
+    buf[i] = s
+  }
+  return buf
+}
 
 describe('pitchNorm — Speaker window (80–1000 Hz)', () => {
   it('clamps below the floor and above the ceiling', () => {
@@ -32,10 +54,10 @@ describe('pitchNorm — Speaker window (80–1000 Hz)', () => {
   })
 })
 
-describe('pitchNorm — Music window (50–4000 Hz)', () => {
+describe('pitchNorm — Music window', () => {
   it('clamps below the floor and above the ceiling', () => {
-    expect(pitchNorm(MUSIC_MIN_HZ - 1, 'music')).toBe(0)
-    expect(pitchNorm(MUSIC_MAX_HZ + 1, 'music')).toBe(1)
+    expect(pitchNorm(MUSIC_BED_MIN_HZ - 1, 'music')).toBe(0)
+    expect(pitchNorm(MUSIC_BED_MAX_HZ + 1, 'music')).toBe(1)
   })
 
   it('keeps a 1 kHz instrument off the top bed', () => {
@@ -44,9 +66,15 @@ describe('pitchNorm — Music window (50–4000 Hz)', () => {
     expect(pitchNorm(1000, 'music')).toBeLessThan(0.75)
   })
 
-  it('maps the geometric midpoint to the middle of the range', () => {
-    const mid = Math.sqrt(MUSIC_MIN_HZ * MUSIC_MAX_HZ)
+  it('maps the geometric midpoint of the bed window to the front/back split', () => {
+    const mid = Math.sqrt(MUSIC_BED_MIN_HZ * MUSIC_BED_MAX_HZ)
     expect(pitchNorm(mid, 'music')).toBeCloseTo(0.5, 6)
+  })
+
+  it('puts a 500 Hz mix note on the front row, not b0', () => {
+    // Old 50–4000 map split at 447 Hz, so typical vocals all sat on the back.
+    expect(pitchNorm(500, 'music')).toBeLessThan(0.5)
+    expect(bedFromPitch(pitchNorm(500, 'music')).id).toMatch(/^f/)
   })
 })
 
@@ -72,3 +100,47 @@ describe('pitchNorm — an octave is a constant step', () => {
     expect(pitchNorm(320) - pitchNorm(160)).toBeCloseTo(1 / octaves, 6)
   })
 })
+
+describe('pitchNorm — Music beds for typical mix notes', () => {
+  it('puts A3–A4 on the front row (f0–f3), not the back', () => {
+    expect(bedFromPitch(pitchNorm(220, 'music')).id).toMatch(/^f/)
+    expect(bedFromPitch(pitchNorm(330, 'music')).id).toMatch(/^f/)
+    expect(bedFromPitch(pitchNorm(440, 'music')).id).toMatch(/^f/)
+  })
+
+  it('puts A5 on the back row', () => {
+    expect(bedFromPitch(pitchNorm(880, 'music')).id).toMatch(/^b/)
+  })
+})
+
+describe('yinPitchHz — Music prefers the fundamental', () => {
+  const sr = 48_000
+  const n = 2048
+  const music = { preferFundamental: true as const }
+
+  it('keeps a bright 220 Hz tone on the front-row fundamental, not 440 Hz', () => {
+    const buf = harmonicTone(220, sr, n, [1.3, 0.7, 0.35])
+    const found = yinPitchHz(buf, sr, MUSIC_MIN_HZ, MUSIC_MAX_HZ, music)
+    expect(found).not.toBeNull()
+    expect(found!.hz).toBeGreaterThan(200)
+    expect(found!.hz).toBeLessThan(280)
+    expect(bedFromPitch(pitchNorm(found!.hz, 'music')).id).toMatch(/^f/)
+  })
+
+  it('does not walk a clean high sine down an octave', () => {
+    const buf = harmonicTone(880, sr, n, [])
+    const found = yinPitchHz(buf, sr, MUSIC_MIN_HZ, MUSIC_MAX_HZ, music)
+    expect(found).not.toBeNull()
+    expect(found!.hz).toBeGreaterThan(800)
+    expect(found!.hz).toBeLessThan(980)
+  })
+
+  it('still hears a 220 Hz sine without the mix bias (Speaker path)', () => {
+    const buf = harmonicTone(220, sr, n, [])
+    const found = yinPitchHz(buf, sr, VOCAL_MIN_HZ, VOCAL_MAX_HZ)
+    expect(found).not.toBeNull()
+    expect(found!.hz).toBeGreaterThan(200)
+    expect(found!.hz).toBeLessThan(240)
+  })
+})
+

@@ -5,6 +5,14 @@ export const VOCAL_MAX_HZ = 1000
 /** Wider window for a music mix (bass through piccolo / piano top). */
 export const MUSIC_MIN_HZ = 50
 export const MUSIC_MAX_HZ = 4000
+/**
+ * Log map for timber beds. Mix melody often sits ~300–700 Hz; mapping the
+ * full 50–4000 Hz window put the split at 447 Hz, so almost every bloom
+ * landed on b0–b3. Detection still uses MUSIC_MIN/MAX (bass below this
+ * clamps to f0; highs above the bed max clamp to b3).
+ */
+export const MUSIC_BED_MIN_HZ = 90
+export const MUSIC_BED_MAX_HZ = 4000
 
 /** Below this RMS, treat as pause / silence */
 export const SILENCE_THRESHOLD = 0.012
@@ -343,6 +351,7 @@ export class PitchDetector {
       this.yinBuf,
       this.yinDiff,
       this.yinCmnd,
+      { preferFundamental: music },
     )
     const hz = pitched && pitched.hz >= minHz && pitched.hz <= maxHz ? pitched.hz : null
     const corr = pitched?.corr ?? 0
@@ -620,6 +629,20 @@ function rootMeanSquare(buf: Float32Array): number {
 const YIN_ABS_THRESHOLD = 0.1
 /** Same plant floor as the old ACF (`bestCorr < 0.35` → no pitch). */
 const YIN_MIN_CORR = 0.35
+/**
+ * Music first-dip ignores shorter periods than this (Hz). Mix hats and bright
+ * harmonics otherwise win YIN’s left-to-right search and park every bloom on b0–b3.
+ */
+const MUSIC_YIN_FIRST_DIP_MAX_HZ = 1400
+
+type YinOptions = {
+  /**
+   * Music mix: ignore hat-range first-dips, and require cleaner periodicity
+   * above ~400 Hz so a bright harmonic does not beat the fundamental.
+   * Speaker stays classic YIN so hummed pitch is unchanged.
+   */
+  preferFundamental?: boolean
+}
 
 /**
  * Keep Nyquist at least 2.5× maxHz so Music 4 kHz still has a few samples/cycle.
@@ -630,6 +653,22 @@ function downsampleFactor(sampleRate: number, maxHz: number): number {
   if (sampleRate / 4 >= need) return 4
   if (sampleRate / 2 >= need) return 2
   return 1
+}
+
+/**
+ * YIN on a buffer. Test helper — production reuses analyser scratch buffers.
+ */
+export function yinPitchHz(
+  buf: Float32Array,
+  sampleRate: number,
+  minHz: number,
+  maxHz: number,
+  options: YinOptions = {},
+): { hz: number; corr: number } | null {
+  const down = new Float32Array(buf.length)
+  const diff = new Float32Array(buf.length)
+  const cmnd = new Float32Array(buf.length)
+  return detectPitchHz(buf, sampleRate, minHz, maxHz, down, diff, cmnd, options)
 }
 
 /**
@@ -644,11 +683,13 @@ function detectPitchHz(
   down: Float32Array,
   diff: Float32Array,
   cmnd: Float32Array,
+  options: YinOptions = {},
 ): { hz: number; corr: number } | null {
   const factor = downsampleFactor(sampleRate, maxHz)
   const n = Math.floor(buf.length / factor)
   if (n < 32) return null
   const sr = sampleRate / factor
+  const preferFundamental = options.preferFundamental === true
 
   let mean = 0
   for (let i = 0; i < n; i++) {
@@ -691,9 +732,14 @@ function detectPitchHz(
     cmnd[tau] = running > 0 ? (diff[tau]! * tau) / running : 1
   }
 
+  const firstDipMinTau = preferFundamental
+    ? Math.max(minTau, Math.floor(sr / MUSIC_YIN_FIRST_DIP_MAX_HZ))
+    : minTau
+
   let tauEst = -1
-  for (let tau = minTau; tau <= maxTau; tau++) {
-    if (cmnd[tau]! < YIN_ABS_THRESHOLD) {
+  for (let tau = firstDipMinTau; tau <= maxTau; tau++) {
+    const thresh = preferFundamental ? musicDipThreshold(sr / tau) : YIN_ABS_THRESHOLD
+    if (cmnd[tau]! < thresh) {
       while (tau + 1 <= maxTau && cmnd[tau + 1]! < cmnd[tau]!) tau++
       tauEst = tau
       break
@@ -727,6 +773,13 @@ function detectPitchHz(
   return { hz: sr / refined, corr }
 }
 
+/** High-frequency dips must be cleaner so mix harmonics do not win first. */
+function musicDipThreshold(hz: number): number {
+  if (hz <= 400) return 0.12
+  if (hz <= 800) return 0.08
+  return 0.05
+}
+
 function logNorm(value: number, min: number, max: number): number {
   if (value <= min) return 0
   if (value >= max) return 1
@@ -735,7 +788,7 @@ function logNorm(value: number, min: number, max: number): number {
 
 /** Map Hz into 0–1 on a log2 (equal-temperament) scale for the listen mode’s window. */
 export function pitchNorm(hz: number, mode: ListenMode = 'speaker'): number {
-  if (mode === 'music') return logNorm(hz, MUSIC_MIN_HZ, MUSIC_MAX_HZ)
+  if (mode === 'music') return logNorm(hz, MUSIC_BED_MIN_HZ, MUSIC_BED_MAX_HZ)
   return logNorm(hz, VOCAL_MIN_HZ, VOCAL_MAX_HZ)
 }
 
