@@ -39,8 +39,9 @@ function drawHead(
 ): void {
   const sheet = tintedBloomHeadCanvas(plant.kind, plant.hz, plant.pitchT, plant.timbreT, 0)
   if (sheet) {
-    const destW = sheet.width
-    const destH = sheet.height
+    // Wrap slots sit near y=16; keep heads inside the 100×100 sticker.
+    const destH = Math.min(16, sheet.height)
+    const destW = Math.max(1, Math.round(destH * (sheet.width / Math.max(1, sheet.height))))
     ctx.save()
     ctx.imageSmoothingEnabled = false
     ctx.drawImage(
@@ -76,7 +77,7 @@ function drawHead(
 }
 
 /**
- * Transparent PNG: the cream wrap with harvested bloom heads at native pixel size.
+ * Transparent PNG: the cream wrap with harvested bloom heads scaled to the sticker.
  */
 export async function renderBouquetPng(flowers: readonly FlowerPlant[]): Promise<Blob> {
   await loadCritterArt()

@@ -3,7 +3,6 @@ import {
   GARDEN_BEDS,
   bedById,
   bedFromPitch,
-  bedsBackToFront,
   gridCol,
   gridRow,
   gridStem,
@@ -13,7 +12,7 @@ import {
   type GardenBed,
 } from './beds'
 import { hueFromPitchClass } from './palette'
-import { bloomHitSize } from './bloomArt'
+import { bloomHitAt } from './bloomArt'
 import { kindFromSound, type FlowerKind } from './sprites'
 
 export type PlantLife = 'seed' | 'bloom' | 'rest' | 'wilt'
@@ -114,23 +113,24 @@ export class Garden {
   }
 
   /**
-   * Front-most flower at a logical pixel, or null for grass / empty soil.
-   * Draw order is back beds then y-sort; hit-test walks the reverse.
+   * Flower under a logical pixel, or null for grass / empty soil.
+   * Overlapping dest boxes pick the nearest bloom head, not whichever stem
+   * rectangle is front-most.
    */
   hitFlowerAt(lx: number, ly: number, now: number): FlowerPlant | null {
-    const beds = bedsBackToFront()
-    for (let b = beds.length - 1; b >= 0; b--) {
-      const bed = beds[b]!
-      const flowers: FlowerPlant[] = []
-      for (const p of this.plants) {
-        if (p.type === 'flower' && p.bedId === bed.id) flowers.push(p)
-      }
-      flowers.sort((a, c) => c.y - a.y)
-      for (const plant of flowers) {
-        if (flowerContains(plant, lx, ly, now)) return plant
+    let best: FlowerPlant | null = null
+    let bestD = Infinity
+    for (const p of this.plants) {
+      if (p.type !== 'flower') continue
+      const hit = flowerHit(p, lx, ly, now)
+      if (!hit) continue
+      const d = (lx - hit.cx) ** 2 + (ly - hit.cy) ** 2
+      if (d < bestD) {
+        bestD = d
+        best = p
       }
     }
-    return null
+    return best
   }
 
   /**
@@ -434,21 +434,25 @@ export function plantLife(plant: Plant, now: number): PlantLifeState {
   return { phase: 'rest', grow: 1, restT, wiltT: 0 }
 }
 
-function flowerContains(plant: FlowerPlant, lx: number, ly: number, now: number): boolean {
+function flowerHit(
+  plant: FlowerPlant,
+  lx: number,
+  ly: number,
+  now: number,
+): { cx: number; cy: number } | null {
   const life = plantLife(plant, now)
   const grow = life.phase === 'seed' ? life.grow : 1
-  const { w, h } = bloomHitSize(
+  return bloomHitAt(
     plant.kind,
     plant.loudnessT,
     grow,
     life.restT,
     life.wiltT,
+    plant.x,
+    plant.y,
+    lx,
+    ly,
   )
-  const x0 = plant.x - w / 2 - 1
-  const x1 = plant.x + w / 2 + 1
-  const y0 = plant.y - h - 1
-  const y1 = plant.y + 2
-  return lx >= x0 && lx <= x1 && ly >= y0 && ly <= y1
 }
 
 function spawnCooldownMs(spawnScale: number): number {

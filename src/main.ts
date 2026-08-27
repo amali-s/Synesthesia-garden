@@ -64,7 +64,7 @@ app.innerHTML = `
           <p class="courtyard-caption" id="courtyard-caption">A courtyard at rest</p>
           <aside class="map-modal" id="map-modal" aria-label="Garden map">
             <div class="bloom-inspect" id="bloom-inspect" hidden>
-              <canvas id="inspect-art" width="56" height="64" aria-hidden="true"></canvas>
+              <canvas id="inspect-art" width="60" height="86" aria-hidden="true"></canvas>
               <div class="bloom-inspect__meta">
                 <strong id="inspect-kind"></strong>
                 <span id="inspect-pitch"></span>
@@ -265,7 +265,7 @@ function showInspect(plant: FlowerPlant, now: number): void {
   )
   const ctx = inspectArt.getContext('2d')
   if (ctx && sheet) {
-    const zoom = 2
+    const zoom = 1
     inspectArt.width = sheet.width * zoom
     inspectArt.height = sheet.height * zoom
     ctx.imageSmoothingEnabled = false

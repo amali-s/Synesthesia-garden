@@ -2,7 +2,7 @@
 
 Living snapshot of Synesthesia Garden. Update this file at the start of a session (if the repo moved) and at the end of any phase or sizable change.
 
-**Last reviewed:** 2026-08-25 (Forage replaces Keep)  
+**Last reviewed:** 2026-08-27 (100px bloom sheets)  
 **Active phase:** none (Phases 1–9 done; Forage is the take-home)  
 **Next recommended work:** [Later / deferred craft](./ROADMAP.md#later--deferred) — one frame language, growth-stage sheets, share URL / clip, PWA
 
@@ -64,7 +64,7 @@ UI in `src/main.ts` is a full-page meadow with two listen sources (one at a time
 - **Clear garden** — ghost/secondary chrome (not Forage’s brass fill); instant reset of plants (listen-time sky keeps going); **Undo** for ~7 s from a plant snapshot; a new flower drops the snapshot. Keyboard **C**. Cancels an in-flight forage.
 - **Pitch meter** — live Hz + equal-temperament note from A440 (`A4` / `C5`); idle shows `—`
 - **Mapping card** — floating bottom-right on the meadow: 2×4 bed compass (same `bedFromPitch(pitchNorm)` as planting) + legend (low front-left → high back-right; timbre + chroma pick kind). Hover/tap a flower fills the card with a larger tinted sprite, kind name, Hz + note (chime still plays). Grass / empty soil stay silent and do not inspect.
-- **Pixel garden** — 320×200 logical, integer backing scale; CSS fills the vine glass (square-pixel letterbox was tried, then dropped so the bed sits against the frame). **2×4** timber patches (`f0`–`f3` front / `b0`–`b3` back); empty visit shows gravel courtyard + “A courtyard at rest”; seven flower kinds; per-plant breeze + onset ripple; integer bloom dest sizes; green vine frame and Figma chrome. Courtyard + timber + soil are cached offscreen and blit each frame; plants + live pitch pulse + mailbox/fox + hour gel draw on top.
+- **Pixel garden** — 320×200 logical, integer backing scale; CSS fills the vine glass (square-pixel letterbox was tried, then dropped so the bed sits against the frame). **2×4** timber patches (`f0`–`f3` front / `b0`–`b3` back); empty visit shows gravel courtyard + “A courtyard at rest”; seven flower kinds from cropped ~43–68×78–86 sheets (was 16–28×32); dest height ~24–32 logical px; green vine frame and Figma chrome. Courtyard + timber + soil are cached offscreen and blit each frame; plants + live pitch pulse + mailbox/fox + hour gel draw on top.
 - **Bloom chime** — hover a flower (mouse/pen) or tap (touch) plays a short sine/bell at that plant’s stored `hz`; click while hovering chimes again; one hover-chime until the pointer leaves; grass and empty soil are silent; wilted blooms still chime while on screen. Uses the same AudioContext as Listen, routed to destination (not the analyser). `BloomChime.muted` follows `prefers-reduced-motion`.
 - **Reduced motion** — `matchMedia('(prefers-reduced-motion: reduce)')` freezes sway / onset pulse / seed grow and the live pitch blink; lifecycle still advances. Keyboard focus uses ink/brass `:focus-visible` rings on `.btn` / `.mode-btn`.
 
@@ -88,7 +88,7 @@ Garden (`src/garden/world.ts`):
 - `hitFlowerAt` — front-most flower in logical space (ignore grass / empty soil)
 - Kind: `(round(timbreT * 6) + round(pitchClassT * 6)) % 7` — not register, so a patch can mix species
 - Hue: chroma picks the family (soft walk is slate/sage/ice/butter/lilac/blush — not stacked pinks); high pitch/timbre mixes to jewel hexes; taupe wilt. Petal lite/deep are punched so blooms do not melt into one blob under the hour gel.
-- Stem ~5–14 logical px × grow envelope; quiet = compact bloom, loud = full petals
+- Stem ~5–14 logical px × grow envelope; quiet = compact bloom (~24 logical px), loud = full petals (~32); PNG sheets are cropped 100px art
 - Bright timbre raises petal contrast + saturation; onsets add ~200 ms extra sway + petal-open, delayed by `x` so a beat rustles left→right; each stem has a hashed phase (slow breeze + gust); grass rustles on the same pulse; PNG bloom dest W/H round to whole logical pixels (hitboxes match)
 - Grass after ~360 ms accumulated pause, using **real frame delta**
 - Placement: empty soil cells across the whole patch, preferring spots farthest from plants already in the bed (no same-pitch clumps)

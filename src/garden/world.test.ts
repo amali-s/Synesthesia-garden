@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { pitchNorm, type PitchSample } from '../audio/pitch'
 import { bedFromPitch } from './beds'
-import { Garden } from './world'
+import { Garden, type FlowerPlant } from './world'
 
 /** Frame delta the garden accepts without clamping (tick caps dt at 48 ms). */
 const FRAME_MS = 40
@@ -178,5 +178,39 @@ describe('Garden.clear', () => {
 
     expect(garden.plants).toHaveLength(1)
     expect(garden.plantsInBed(snapshot[0]!.bedId)).toHaveLength(1)
+  })
+})
+
+describe('Garden.hitFlowerAt', () => {
+  it('picks the nearer bloom head when dest boxes overlap', () => {
+    const garden = newGarden()
+    const now = 4000
+    const back: FlowerPlant = {
+      type: 'flower',
+      x: 50,
+      y: 90,
+      bedId: 'f0',
+      kind: 'daisy',
+      pitchT: 0.2,
+      loudnessT: 0.9,
+      timbreT: 0.4,
+      hz: 220,
+      born: now - 2000,
+      baseHue: 20,
+      wiltStarted: null,
+    }
+    const front: FlowerPlant = {
+      ...back,
+      y: 112,
+      hz: 330,
+      kind: 'tulip',
+    }
+    garden.restorePlants([back, front])
+
+    const overBackHead = garden.hitFlowerAt(50, 68, now)
+    expect(overBackHead?.hz).toBe(220)
+
+    const overFrontHead = garden.hitFlowerAt(50, 92, now)
+    expect(overFrontHead?.hz).toBe(330)
   })
 })

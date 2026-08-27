@@ -212,7 +212,7 @@ export function bloomDrawHeight(
   onsetPulse: number,
 ): number {
   return (
-    (14 + loudnessT * 6.4) *
+    (24 + loudnessT * 8) *
     Math.max(0.42, grow) *
     (1 - restT * 0.1) *
     (1 - wiltT * 0.32) *
@@ -244,6 +244,54 @@ export function bloomHitSize(
   wiltT: number,
 ): { w: number; h: number } {
   return bloomPixelSize(kind, loudnessT, grow, restT, wiltT, 0)
+}
+
+/**
+ * Pointer vs one bloom. Empty sheet padding does not count; `cx,cy` is the
+ * petal cluster so overlapping dest boxes pick the nearest head, not the
+ * front-most stem rectangle.
+ */
+export function bloomHitAt(
+  kind: FlowerKind,
+  loudnessT: number,
+  grow: number,
+  restT: number,
+  wiltT: number,
+  stemX: number,
+  stemY: number,
+  lx: number,
+  ly: number,
+): { cx: number; cy: number } | null {
+  const { w, h } = bloomHitSize(kind, loudnessT, grow, restT, wiltT)
+  const x0 = stemX - Math.floor(w / 2)
+  const y0 = stemY - h
+  if (lx < x0 || lx >= x0 + w || ly < y0 || ly >= stemY + 1) return null
+  const sheet = sheets.get(kind)
+  if (sheet && !sheetOpaqueNear(sheet, w, h, x0, y0, lx, ly)) return null
+  return { cx: stemX, cy: stemY - h * 0.62 }
+}
+
+function sheetOpaqueNear(
+  sheet: Sheet,
+  destW: number,
+  destH: number,
+  x0: number,
+  y0: number,
+  lx: number,
+  ly: number,
+): boolean {
+  for (let oy = -1; oy <= 1; oy++) {
+    for (let ox = -1; ox <= 1; ox++) {
+      const sx = Math.floor(((lx + ox - x0) / destW) * sheet.w)
+      const sy = Math.floor(((ly + oy - y0) / destH) * sheet.h)
+      if (sx < 0 || sy < 0 || sx >= sheet.w || sy >= sheet.h) continue
+      const i = (sy * sheet.w + sx) * 4
+      const a = sheet.data[i + 3]!
+      const lum = sheet.data[i]! + sheet.data[i + 1]! + sheet.data[i + 2]!
+      if (a >= 20 && lum >= 18) return true
+    }
+  }
+  return false
 }
 
 export function drawBloomArt(

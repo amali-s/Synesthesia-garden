@@ -347,7 +347,7 @@ body {
 
 .bloom-inspect canvas {
   display: block;
-  height: 56px;
+  height: 80px;
   width: auto;
   image-rendering: pixelated;
   image-rendering: crisp-edges;
