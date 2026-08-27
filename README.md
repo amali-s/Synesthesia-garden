@@ -10,7 +10,7 @@ Plan and acceptance criteria live in [`ROADMAP.md`](./ROADMAP.md); what is actua
 2. Press **Listen** (or the **L** key). The same button reads **Stop** while capturing.
 3. Sing, talk, or play something. Pitched sound plants flowers across eight timber beds — low and left in front, high and right at the back. Quiet gaps sprout grass. Drums pulse the bed instead of planting.
 4. **Hover** a flower (or tap it on touch) to hear its pitch chime and see its kind, Hz, and note in the mapping card.
-5. **Keep** (**K**) downloads a framed PNG of the meadow. **Clear garden** (**C**) empties the beds, with an Undo for a few seconds.
+5. **Stop**, then **Forage** (**K**). A fox harvests the fullest beds and mails a small bouquet PNG. **Clear garden** (**C**) empties the beds, with an Undo for a few seconds.
 
 The pitch meter shows live Hz plus the equal-temperament note from A440. The card in the bottom-right corner is the legend: a 2×4 bed compass driven by the same math as planting.
 

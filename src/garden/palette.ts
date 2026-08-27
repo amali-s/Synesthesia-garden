@@ -327,6 +327,10 @@ export function hslCss({ h, s, l }: Hsl): string {
   return `hsl(${h.toFixed(1)} ${s.toFixed(1)}% ${l.toFixed(1)}%)`
 }
 
+export function rgbCss([r, g, b]: Rgb): string {
+  return `rgb(${r} ${g} ${b})`
+}
+
 export function hslDarker(c: Hsl, amount = 12): string {
   return hslCss({ h: c.h, s: c.s, l: Math.max(20, c.l - amount) })
 }

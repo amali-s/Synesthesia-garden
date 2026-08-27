@@ -382,6 +382,14 @@ export class Garden {
     this.startWilts(now)
   }
 
+  /** Take a living plant out of the bed (forage harvest). */
+  removePlant(plant: Plant): void {
+    this.plants = this.plants.filter((p) => p !== plant)
+    const list = this.byBed[plant.bedId]
+    const i = list.indexOf(plant)
+    if (i >= 0) list.splice(i, 1)
+  }
+
   /** Keep `plants` and the per-bed y-lists in lockstep. */
   private insertPlant(plant: Plant): void {
     this.plants.push(plant)

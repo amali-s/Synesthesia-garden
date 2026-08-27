@@ -2,12 +2,20 @@
 
 export const GRID_COLS = 4
 export const GRID_ROWS = 2
-/** Inset from canvas / vine frame; leaves room for the hour-cast planter shadow (up to 2px). */
-export const GRID_PAD = 8
+/** Left inset; hour-cast planter shadow is ≤2px. */
+export const GRID_PAD_X = 8
+/**
+ * Gravel walk above the back beds. Tall enough for the mailbox to sit
+ * entirely on courtyard, not on timber.
+ */
+export const GRID_PAD_TOP = 32
+/** Gravel walk below the front beds. */
+export const GRID_PAD_BOTTOM = 12
 /** Gutter between patches (shadow ≤2px, so they never kiss). */
 export const GRID_GAP = 8
 export const PATCH_W = 70
-export const PATCH_H = 88
+/** Shorter so the 32px gravel walk can hold the mailbox sprite. */
+export const PATCH_H = 74
 export const TIMBER = 5
 export const LIP = 4
 
@@ -29,8 +37,8 @@ export type GardenBed = {
 
 function patch(col: 0 | 1 | 2 | 3, row: 0 | 1): { x: number; y: number } {
   return {
-    x: GRID_PAD + col * (PATCH_W + GRID_GAP),
-    y: GRID_PAD + row * (PATCH_H + GRID_GAP),
+    x: GRID_PAD_X + col * (PATCH_W + GRID_GAP),
+    y: GRID_PAD_TOP + row * (PATCH_H + GRID_GAP),
   }
 }
 
@@ -84,6 +92,14 @@ export function bedById(id: BedId): GardenBed {
 
 export function bedsBackToFront(): GardenBed[] {
   return [...GARDEN_BEDS].sort((a, b) => a.y - b.y || a.x - b.x)
+}
+
+/** True when a point is courtyard gravel (including off-canvas), not timber/soil. */
+export function isGravel(x: number, y: number): boolean {
+  for (const bed of GARDEN_BEDS) {
+    if (x >= bed.x && x < bed.x + bed.w && y >= bed.y && y < bed.y + bed.h) return false
+  }
+  return true
 }
 
 export function soilRect(bed: GardenBed): {

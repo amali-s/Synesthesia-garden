@@ -2,8 +2,8 @@
 
 Living snapshot of Synesthesia Garden. Update this file at the start of a session (if the repo moved) and at the end of any phase or sizable change.
 
-**Last reviewed:** 2026-08-25 (Phase 9 engineering hygiene)  
-**Active phase:** none (Phases 1–9 done)  
+**Last reviewed:** 2026-08-25 (Forage replaces Keep)  
+**Active phase:** none (Phases 1–9 done; Forage is the take-home)  
 **Next recommended work:** [Later / deferred craft](./ROADMAP.md#later--deferred) — one frame language, growth-stage sheets, share URL / clip, PWA
 
 Plan and acceptance criteria: [`ROADMAP.md`](./ROADMAP.md)
@@ -14,7 +14,7 @@ Plan and acceptance criteria: [`ROADMAP.md`](./ROADMAP.md)
 
 A pixel-art meadow that grows from **voice or music already playing on the device**: pitch, loudness, timbre, and rhythm become kind, hue, size, and motion. Speaker mode uses the microphone; Music mode captures tab/window/system audio. YIN pitch detector (downsampled); flowers from pitched sound, grass from quiet. Art Nouveau frame and palette (Mucha / Tiffany jewel tones).
 
-Shipped loop: **Speaker or Music → Listen → flowers; pause → grass in gaps; Stop (same button); hover/tap a bloom to hear its pitch and inspect kind + note; Keep a framed PNG; Clear garden (Undo for a few seconds).**
+Shipped loop: **Speaker or Music → Listen → flowers; pause → grass in gaps; Stop (same button); hover/tap a bloom to hear its pitch and inspect kind + note; Stop, then Forage — a fox harvests the fullest beds and mails a bouquet PNG; Clear garden (Undo for a few seconds).**
 
 ---
 
@@ -22,7 +22,7 @@ Shipped loop: **Speaker or Music → Listen → flowers; pause → grass in gaps
 
 | Area | Status |
 | --- | --- |
-| Mic pitch garden | **Shipped** — Listen / Stop on one primary button; Keep; Clear |
+| Mic pitch garden | **Shipped** — Listen / Stop on one primary button; Forage; Clear |
 | Speaker vs Music listen | **Shipped** — segmented cream/brass toggle; Music uses `getDisplayMedia` + Share audio; only Listen is filled green |
 | Pitch → patch; chroma + timbre → kind/hue | **Shipped** — log2 80–1000 Hz (Speaker); 50–4000 Hz (Music) |
 | Loudness → stem + bloom | **Shipped** — log RMS, AGC off |
@@ -40,12 +40,13 @@ Shipped loop: **Speaker or Music → Listen → flowers; pause → grass in gaps
 | Organic placement | **Shipped** — even fill of empty cells in each patch |
 | Lifecycle | **Shipped** — seed → bloom → rest; oldest wilt instead of splice |
 | Listen-time sky | **Shipped** — low-opacity hour gel on the canvas (cool → bright → warm; Pause holds; Clear keeps the clock) |
-| Postcard PNG | **Shipped** — Keep downloads a framed vine-glass PNG (`synesthesia-garden-YYYY-MM-DD.png`); empty courtyard keeps the caption; plants hide it |
+| Postcard PNG | **Replaced** — Keep is gone. `postcard.ts` still has the vine compositor + `downloadBlob` |
+| Forage bouquet | **Shipped** — Stop, then Forage (**K**). Fox harvests fullest beds (6–12 stems, max 4/patch); mailbox flag up at drop-off; small cream-wrap PNG. Empty / under 6: sniff and leave. Disabled while listening. |
 | Local file / song playback | **Deferred** — `SongPlayer` exists, not in `main.ts`; its old centered CSS was deleted in Phase 9 (see Later) |
 | Spotify previews | **Hidden** — API + plugin file exist; UI gone and dev middleware no longer registered |
 | Qobuz streaming | **Hidden / deferred** — API + plugin file exist; UI gone and dev middleware no longer registered |
-| Export / share | **PNG shipped** — share URL/seed and GIF/WebM not started (optional) |
-| Tests | **Shipped** — Vitest; `npm test` covers `pitchNorm`, `Garden.ingest`, URL parsers (38 tests) |
+| Export / share | **Bouquet PNG shipped** — share URL/seed and GIF/WebM not started (optional) |
+| Tests | **Shipped** — Vitest; `npm test` covers `pitchNorm`, `Garden.ingest`, forage planner, URL parsers |
 | Typecheck | **Shipped** — `npm run build` runs `tsconfig.json` (`src`) **and** `tsconfig.node.json` (`api/`, Vite config, dev plugins) |
 | Deploy | GitHub Pages (`base: /Synesthesia-garden/`) or Vercel (`VERCEL` → `/`) |
 
@@ -55,15 +56,15 @@ Shipped loop: **Speaker or Music → Listen → flowers; pause → grass in gaps
 
 UI in `src/main.ts` is a full-page meadow with two listen sources (one at a time):
 
-- **Top bar** — Listen (Stop while capturing), Keep, Clear garden (ghost), **Speaker | Music**, pitch meter (Hz + note)
+- **Top bar** — Listen (Stop while capturing), Forage, Clear garden (ghost), **Speaker | Music**, pitch meter (Hz + note)
 - **Speaker** (default) — `getUserMedia`, echo cancellation / noise suppression on, **AGC off**, vocal 80–1000 Hz
 - **Music** — `getDisplayMedia` with audio required; video track muted/ignored; echo cancel / noise suppress / AGC **off**; pitch window **50–4000 Hz** for planting *and* `pitchNorm` (so high instruments are not all clamped to the top bed). Capture is **not** played through the garden (no double audio)
 - **Listen / Stop** — one `#listen-btn` (`.btn.primary`, `aria-pressed` while capturing, `aria-keyshortcuts="L"`). Idle label **Listen** starts the selected mode; while listening the same button reads **Stop**. Disabled only during the mic/share permission wait. Switching mode while listening stops the current stream, then starts the new one. Share-ended and capture errors return the button to Listen. Keyboard **L** toggles the same path (ignored with Cmd/Ctrl/Alt).
-- **Keep** — one-click PNG of the vine window + glass (CSS frame composited around the live canvas). Caption “A courtyard at rest” is included only when the bed is empty. Filename `synesthesia-garden-YYYY-MM-DD.png`. Keyboard **K**.
-- **Clear garden** — ghost/secondary chrome (not Keep’s brass fill); instant reset of plants (listen-time sky keeps going); **Undo** for ~7 s from a plant snapshot; a new flower drops the snapshot. Keyboard **C**.
+- **Forage** — enabled only when not listening (Stop first). Pixel fox enters top-left; if fewer than 6 living flowers can be taken under the caps, it sniffs and walks back out. Otherwise it harvests from the fullest patches (living count), at most 4 stems per bed and 12 in the bouquet (minimum 6). Picked flowers leave the bed. A mailbox sits in the top-right with its red flag down except while the fox is posting. Download is a small transparent PNG of the loose bunch in cream paper (`synesthesia-bouquet-YYYY-MM-DD.png`). Keyboard **K**. Reduced motion still plays the walk.
+- **Clear garden** — ghost/secondary chrome (not Forage’s brass fill); instant reset of plants (listen-time sky keeps going); **Undo** for ~7 s from a plant snapshot; a new flower drops the snapshot. Keyboard **C**. Cancels an in-flight forage.
 - **Pitch meter** — live Hz + equal-temperament note from A440 (`A4` / `C5`); idle shows `—`
 - **Mapping card** — floating bottom-right on the meadow: 2×4 bed compass (same `bedFromPitch(pitchNorm)` as planting) + legend (low front-left → high back-right; timbre + chroma pick kind). Hover/tap a flower fills the card with a larger tinted sprite, kind name, Hz + note (chime still plays). Grass / empty soil stay silent and do not inspect.
-- **Pixel garden** — 320×200 logical, integer backing scale; CSS fills the vine glass (square-pixel letterbox was tried, then dropped so the bed sits against the frame). **2×4** timber patches (`f0`–`f3` front / `b0`–`b3` back); empty visit shows gravel courtyard + “A courtyard at rest”; seven flower kinds; per-plant breeze + onset ripple; integer bloom dest sizes; green vine frame and Figma chrome. Courtyard + timber + soil are cached offscreen and blit each frame; plants + live pitch pulse + hour gel draw on top.
+- **Pixel garden** — 320×200 logical, integer backing scale; CSS fills the vine glass (square-pixel letterbox was tried, then dropped so the bed sits against the frame). **2×4** timber patches (`f0`–`f3` front / `b0`–`b3` back); empty visit shows gravel courtyard + “A courtyard at rest”; seven flower kinds; per-plant breeze + onset ripple; integer bloom dest sizes; green vine frame and Figma chrome. Courtyard + timber + soil are cached offscreen and blit each frame; plants + live pitch pulse + mailbox/fox + hour gel draw on top.
 - **Bloom chime** — hover a flower (mouse/pen) or tap (touch) plays a short sine/bell at that plant’s stored `hz`; click while hovering chimes again; one hover-chime until the pointer leaves; grass and empty soil are silent; wilted blooms still chime while on screen. Uses the same AudioContext as Listen, routed to destination (not the analyser). `BloomChime.muted` follows `prefers-reduced-motion`.
 - **Reduced motion** — `matchMedia('(prefers-reduced-motion: reduce)')` freezes sway / onset pulse / seed grow and the live pitch blink; lifecycle still advances. Keyboard focus uses ink/brass `:focus-visible` rings on `.btn` / `.mode-btn`.
 
@@ -106,7 +107,9 @@ Music layout (2026-08-19): stereo mix uses L/R tap (not played through the garde
 
 Bloom chime (2026-08-22): pointer maps canvas CSS box → backing store / `getScale()` → logical pixel. Flowers chime at stored `hz` (not the live mix); grass does not.
 
-Keep (2026-08-23): offscreen canvas composites the live meadow with a 9-slice of `vine-frame.svg` (same slice/round as CSS `border-image`). No extra dependency. Share URL and clip deferred.
+Keep (2026-08-23): offscreen canvas composites the live meadow with a 9-slice of `vine-frame.svg`. Replaced by Forage (2026-08-25). Share URL and clip still deferred.
+
+Forage (2026-08-25): fox harvests fullest beds (6–12, max 4/patch), mailbox flag at drop-off, cream-wrap bouquet PNG. Keep is gone.
 
 Mapping HUD (2026-08-24): note name beside Hz; corner card holds the 2×4 compass + legend; hover inspect reuses the tinted sprite path. Clear is ghost chrome with a few-second undo.
 
@@ -231,7 +234,7 @@ Leftovers / honest limits:
 | 3 | Organic garden + lifecycle | Done |
 | 4 | Music mix → garden layout | Done |
 | 5 | Replay bloom as chime | Done |
-| 6 | Keep what grew (PNG / share) | Done (PNG; share URL and clip optional leftover) |
+| 6 | Keep what grew (PNG / share) | Done (Forage bouquet PNG; share URL and clip optional leftover) |
 | 7 | Canvas + pitch performance | Done |
 | 8 | Teach the mapping + a11y | Done |
 | 9 | Engineering hygiene | Done |
@@ -242,18 +245,21 @@ Leftovers / honest limits:
 ## Layout (as of last review)
 
 ```
-src/main.ts                 UI + rAF loop (Speaker/Music top bar + meadow + mapping card + bloom pointer + Keep)
+src/main.ts                 UI + rAF loop (Speaker/Music top bar + meadow + mapping card + bloom pointer + Forage)
 src/audio/pitch.ts          Detector (YIN) + mic / display capture + mix layout (pan, duration, tempo, drums)
 src/audio/chime.ts          Short bloom tone at stored hz (shared AudioContext)
 src/audio/songPlayer.ts     Unused by UI
 src/audio/spotifyUrl.ts     Unused by UI
 src/audio/qobuzUrl.ts       Unused by UI
-src/garden/world.ts         Clusters, mix-layout x/y, tempo cooldown, gap grass, lifecycle, bloom hit-test, per-bed y-insert
-src/garden/renderer.ts      Full-scene draw; cached courtyard/beds; hour gel; per-plant wind
-src/garden/postcard.ts      Framed PNG composite (vine 9-slice + glass)
+src/garden/world.ts         Clusters, mix-layout x/y, tempo cooldown, gap grass, lifecycle, bloom hit-test, per-bed y-insert, forage harvest
+src/garden/renderer.ts      Full-scene draw; cached courtyard/beds; mailbox + fox overlay; hour gel; per-plant wind
+src/garden/forage.ts        Fullest-bed planner + fox walk / pick / mail / sniff
+src/garden/critters.ts      Pixel fox + mailbox
+src/garden/bouquet.ts       Small cream-wrap bouquet PNG
+src/garden/postcard.ts      `downloadBlob` (+ unused vine postcard compositor)
 src/garden/sprites.ts       Pixel flowers / grass (life + wilt)
 src/garden/palette.ts       GROUND + ACCENTS + punchier bloom walk + hour gel
-src/**/*.test.ts            Vitest: pitch mapping, garden ingest, URL parsers
+src/**/*.test.ts            Vitest: pitch mapping, garden ingest, forage planner, URL parsers
 api/                        Vercel functions (hidden features)
 vite-plugin-*-api.ts        Dev stubs for those APIs (not registered)
 tsconfig.json               Browser typecheck (src)

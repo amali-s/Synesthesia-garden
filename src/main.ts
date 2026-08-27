@@ -10,13 +10,12 @@ import {
 import { BloomChime } from './audio/chime'
 import { bedFromPitch, type BedId } from './garden/beds'
 import { loadBloomArt, tintedBloomCanvas } from './garden/bloomArt'
+import { loadCritterArt } from './garden/critters'
 import { Garden, plantLife, type FlowerPlant, type Plant } from './garden/world'
 import { GardenRenderer } from './garden/renderer'
-import {
-  downloadBlob,
-  postcardFilename,
-  renderPostcardPng,
-} from './garden/postcard'
+import { bouquetFilename, renderBouquetPng } from './garden/bouquet'
+import { ForageRun, planBouquet, type ForageView } from './garden/forage'
+import { downloadBlob } from './garden/postcard'
 
 const LOGICAL_W = 320
 const LOGICAL_H = 200
@@ -41,7 +40,7 @@ app.innerHTML = `
             <button type="button" class="mode-btn" id="mode-speaker" aria-pressed="true">Speaker</button>
             <button type="button" class="mode-btn" id="mode-music" aria-pressed="false">Music</button>
           </div>
-          <button type="button" class="btn" id="keep-btn" aria-label="Save garden as PNG" aria-keyshortcuts="K">Keep</button>
+          <button type="button" class="btn" id="forage-btn" aria-label="Forage a bouquet" aria-keyshortcuts="K">Forage</button>
         </div>
       </div>
       <div class="top-bar__meter">
@@ -85,7 +84,7 @@ app.innerHTML = `
 
 const canvas = document.querySelector<HTMLCanvasElement>('#garden')!
 const listenBtn = document.querySelector<HTMLButtonElement>('#listen-btn')!
-const keepBtn = document.querySelector<HTMLButtonElement>('#keep-btn')!
+const forageBtn = document.querySelector<HTMLButtonElement>('#forage-btn')!
 const clearBtn = document.querySelector<HTMLButtonElement>('#clear-btn')!
 const undoBtn = document.querySelector<HTMLButtonElement>('#undo-btn')!
 const modeSpeakerBtn = document.querySelector<HTMLButtonElement>('#mode-speaker')!
@@ -95,7 +94,6 @@ const pitchHz = document.querySelector<HTMLSpanElement>('#pitch-hz')!
 const pitchNote = document.querySelector<HTMLSpanElement>('#pitch-note')!
 const compassCells = [...document.querySelectorAll<HTMLSpanElement>('.bed-cell')]
 const statusEl = document.querySelector<HTMLDivElement>('#status')!
-const windowFrame = document.querySelector<HTMLDivElement>('.window-frame')!
 const glass = document.querySelector<HTMLDivElement>('.window-frame__glass')!
 const courtyardCaption = document.querySelector<HTMLParagraphElement>('#courtyard-caption')!
 const bloomInspect = document.querySelector<HTMLDivElement>('#bloom-inspect')!
@@ -122,6 +120,7 @@ let inspectFlower: FlowerPlant | null = null
 let inspectTimer = 0
 let undoSnapshot: Plant[] | null = null
 let undoTimer = 0
+let forageRun: ForageRun | null = null
 
 const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
 
@@ -142,6 +141,7 @@ const renderer = new GardenRenderer(canvas, LOGICAL_W, LOGICAL_H, {
   scale: computeBackingScale(),
 })
 void loadBloomArt()
+void loadCritterArt()
 
 function applyReducedMotion(): void {
   const reduce = motionQuery.matches
@@ -201,6 +201,11 @@ function setListeningUi(on: boolean, pending = false): void {
   listenBtn.textContent = on ? 'Stop' : 'Listen'
   listenBtn.setAttribute('aria-pressed', on ? 'true' : 'false')
   listenBtn.classList.toggle('active', on)
+  syncForageEnabled()
+}
+
+function syncForageEnabled(): void {
+  forageBtn.disabled = listening || listenBtn.disabled || forageRun !== null
 }
 
 function highlightCompass(id: BedId | null): void {
@@ -313,6 +318,7 @@ function hasLivingFlower(): boolean {
 }
 
 function clearGarden(): void {
+  cancelForage()
   const captured = garden.plants.length > 0
   if (captured) undoSnapshot = garden.snapshotPlants()
   garden.clear()
@@ -399,27 +405,50 @@ function applyMode(next: ListenMode): void {
   setStatus(idleStatus())
 }
 
-async function keepPostcard(): Promise<void> {
-  if (keepBtn.disabled) return
-  keepBtn.disabled = true
+async function mailBouquet(flowers: readonly FlowerPlant[]): Promise<void> {
   try {
-    const blob = await renderPostcardPng({
-      frameEl: windowFrame,
-      gardenCanvas: canvas,
-      captionEl: courtyardCaption,
-      showCaption: garden.plants.length === 0,
-    })
-    downloadBlob(blob, postcardFilename())
-    setStatus(
-      garden.plants.length === 0
-        ? 'Kept the empty courtyard'
-        : 'Kept a postcard of the garden',
-    )
+    const blob = await renderBouquetPng(flowers)
+    downloadBlob(blob, bouquetFilename())
+    setStatus('A bouquet is in the mail')
   } catch {
-    setStatus('Could not save the postcard — try again')
-  } finally {
-    keepBtn.disabled = false
+    setStatus('Could not save the bouquet — try again')
   }
+}
+
+function cancelForage(): void {
+  if (!forageRun) return
+  forageRun = null
+  syncForageEnabled()
+}
+
+function startForage(): void {
+  if (listening || forageRun) return
+  const now = lastFrameNow || performance.now()
+  const picks = planBouquet(garden, now)
+  forageRun = new ForageRun(garden, picks, now)
+  syncForageEnabled()
+  setStatus(
+    picks.length > 0
+      ? 'The fox is foraging the fullest beds…'
+      : 'The fox is sniffing the courtyard…',
+  )
+}
+
+function tickForage(now: number): ForageView | null {
+  if (!forageRun) return null
+  const ev = forageRun.tick(now)
+  if (ev?.type === 'mail') {
+    void mailBouquet(forageRun.bouquet)
+  }
+  if (ev?.type === 'done') {
+    if (!ev.mailed && !listening) {
+      setStatus('Nothing to forage — the fox left empty-handed')
+    }
+    forageRun = null
+    syncForageEnabled()
+    return null
+  }
+  return forageRun.view(now)
 }
 
 function isTypingTarget(el: EventTarget | null): boolean {
@@ -444,8 +473,8 @@ listenBtn.addEventListener('click', () => {
   toggleListen()
 })
 
-keepBtn.addEventListener('click', () => {
-  void keepPostcard()
+forageBtn.addEventListener('click', () => {
+  startForage()
 })
 
 clearBtn.addEventListener('click', () => {
@@ -470,7 +499,7 @@ window.addEventListener('keydown', (e) => {
     return
   }
   if (key === 'k') {
-    void keepPostcard()
+    startForage()
   }
 })
 
@@ -598,7 +627,8 @@ function frame(now: number): void {
   }
 
   syncCourtyardCaption()
-  renderer.draw(garden, now, livePitchT)
+  const forageView = tickForage(now)
+  renderer.draw(garden, now, livePitchT, forageView)
   requestAnimationFrame(frame)
 }
 

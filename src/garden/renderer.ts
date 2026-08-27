@@ -3,6 +3,12 @@ import {
   bedsBackToFront,
   type GardenBed,
 } from './beds'
+import {
+  drawCarriedBloom,
+  drawFox,
+  drawMailbox,
+} from './critters'
+import type { ForageView } from './forage'
 import { ACCENTS, GROUND, hourShadowOffsetForListenMs, hourTintForListenMs } from './palette'
 import { drawFlower, drawGrass } from './sprites'
 import { plantLife, type Garden, type Plant } from './world'
@@ -65,7 +71,12 @@ export class GardenRenderer {
     this.bgDirty = true
   }
 
-  draw(garden: Garden, now: number, livePitchT: number | null): void {
+  draw(
+    garden: Garden,
+    now: number,
+    livePitchT: number | null,
+    forage: ForageView | null = null,
+  ): void {
     const { ctx, scale, logicalW } = this
     this.ensureBackground(garden.listenMs)
     ctx.drawImage(this.bgCanvas, 0, 0)
@@ -88,7 +99,39 @@ export class GardenRenderer {
       ctx.fillRect((cx - size) * scale, (cy - size) * scale, size * 2 * scale, size * 2 * scale)
     }
 
+    drawMailbox(ctx, scale, forage?.mailboxFlag ?? false)
+    if (forage) this.drawForage(forage)
     this.drawHourGel(garden.listenMs)
+  }
+
+  private drawForage(forage: ForageView): void {
+    const { ctx, scale } = this
+    if (forage.lifting) {
+      drawCarriedBloom(
+        ctx,
+        forage.lifting,
+        forage.liftX,
+        forage.liftY,
+        scale,
+        12,
+      )
+    }
+    const carry = forage.bundle.slice(-3)
+    for (let i = 0; i < carry.length; i++) {
+      const plant = carry[i]!
+      const ox = forage.foxX - forage.facing * (2 + i * 2)
+      const oy = forage.foxY - 9 - i
+      drawCarriedBloom(ctx, plant, ox, oy, scale, 8)
+    }
+    drawFox(
+      ctx,
+      forage.foxX,
+      forage.foxY,
+      scale,
+      forage.facing,
+      forage.pose,
+      forage.frame,
+    )
   }
 
   private ensureBackground(listenMs: number): void {
