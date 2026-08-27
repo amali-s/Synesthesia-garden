@@ -13,6 +13,13 @@ export const MUSIC_MAX_HZ = 4000
  */
 export const MUSIC_BED_MIN_HZ = 90
 export const MUSIC_BED_MAX_HZ = 4000
+/**
+ * Music YIN prefers a lead in this band (vocals / hooks). Bass below the
+ * floor only plants when nothing here is periodic enough. Hats stay out via
+ * MUSIC_YIN_FIRST_DIP_MAX_HZ. The 2×4 bed map is unchanged.
+ */
+export const MUSIC_MELODY_MIN_HZ = 180
+export const MUSIC_MELODY_MAX_HZ = 1000
 
 /** Below this RMS, treat as pause / silence */
 export const SILENCE_THRESHOLD = 0.012
@@ -630,16 +637,28 @@ const YIN_ABS_THRESHOLD = 0.1
 /** Same plant floor as the old ACF (`bestCorr < 0.35` → no pitch). */
 const YIN_MIN_CORR = 0.35
 /**
- * Music first-dip ignores shorter periods than this (Hz). Mix hats and bright
- * harmonics otherwise win YIN’s left-to-right search and park every bloom on b0–b3.
+ * Music ignores shorter periods than this (Hz). Mix hats and bright
+ * harmonics otherwise win and park every bloom on b0–b3.
  */
 const MUSIC_YIN_FIRST_DIP_MAX_HZ = 1400
+/** Accept a messier mix lead than classic YIN (bass is usually cleaner). */
+const MUSIC_MELODY_CMND_MAX = 0.32
+/** Among melody dips this close in CMND, prefer the higher Hz (true period). */
+const MUSIC_MELODY_CMND_TIE = 0.05
+/** Highpass floor before the melody YIN pass (below typical vocals, above bass). */
+const MUSIC_MELODY_HP_HZ = 140
+
+type YinDip = {
+  tau: number
+  hz: number
+  cmnd: number
+}
 
 type YinOptions = {
   /**
-   * Music mix: ignore hat-range first-dips, and require cleaner periodicity
-   * above ~400 Hz so a bright harmonic does not beat the fundamental.
-   * Speaker stays classic YIN so hummed pitch is unchanged.
+   * Music mix: highpass, then pick a CMND dip in MUSIC_MELODY_MIN/MAX
+   * (or a high hook under 1400 Hz). Bass only if that pass finds nothing.
+   * Speaker stays classic first-dip YIN so hummed pitch is unchanged.
    */
   preferFundamental?: boolean
 }
@@ -714,41 +733,45 @@ function detectPitchHz(
   const maxTau = Math.min(n >> 1, Math.floor(sr / minHz))
   if (maxTau <= minTau + 2) return null
 
-  diff[0] = 0
-  for (let tau = 1; tau <= maxTau; tau++) {
-    let sum = 0
-    const last = n - tau
-    for (let j = 0; j < last; j++) {
-      const d = down[j]! - down[j + tau]!
-      sum += d * d
-    }
-    diff[tau] = sum
-  }
-
-  cmnd[0] = 1
-  let running = 0
-  for (let tau = 1; tau <= maxTau; tau++) {
-    running += diff[tau]!
-    cmnd[tau] = running > 0 ? (diff[tau]! * tau) / running : 1
-  }
+  fillYinCmnd(down, n, maxTau, diff, cmnd)
 
   const firstDipMinTau = preferFundamental
     ? Math.max(minTau, Math.floor(sr / MUSIC_YIN_FIRST_DIP_MAX_HZ))
     : minTau
 
   let tauEst = -1
-  for (let tau = firstDipMinTau; tau <= maxTau; tau++) {
-    const thresh = preferFundamental ? musicDipThreshold(sr / tau) : YIN_ABS_THRESHOLD
-    if (cmnd[tau]! < thresh) {
-      while (tau + 1 <= maxTau && cmnd[tau + 1]! < cmnd[tau]!) tau++
-      tauEst = tau
-      break
+  if (preferFundamental) {
+    const mixDips = collectYinDips(cmnd, firstDipMinTau, maxTau, sr)
+    const fallback = pickMusicFallbackDip(mixDips)
+    const hp =
+      down.length >= n * 2 ? down.subarray(n, n * 2) : new Float32Array(n)
+    const hpEnergy = highpassCopy(down, hp, diff, n, sr, MUSIC_MELODY_HP_HZ)
+    if (hpEnergy >= 1e-8) {
+      fillYinCmnd(hp, n, maxTau, diff, cmnd)
+      const lead = pickMelodyLeadDip(collectYinDips(cmnd, firstDipMinTau, maxTau, sr))
+      if (lead) {
+        tauEst = lead.tau
+      } else {
+        tauEst = fallback?.tau ?? -1
+        if (fallback) fillYinCmnd(down, n, maxTau, diff, cmnd)
+      }
+    } else {
+      tauEst = fallback?.tau ?? -1
+    }
+  } else {
+    for (let tau = firstDipMinTau; tau <= maxTau; tau++) {
+      if (cmnd[tau]! < YIN_ABS_THRESHOLD) {
+        while (tau + 1 <= maxTau && cmnd[tau + 1]! < cmnd[tau]!) tau++
+        tauEst = tau
+        break
+      }
     }
   }
 
   if (tauEst < 0) {
+    const searchFrom = preferFundamental ? firstDipMinTau : minTau
     let best = 1
-    for (let tau = minTau; tau <= maxTau; tau++) {
+    for (let tau = searchFrom; tau <= maxTau; tau++) {
       const v = cmnd[tau]!
       if (v < best) {
         best = v
@@ -771,6 +794,162 @@ function detectPitchHz(
   if (refined < 1) return null
 
   return { hz: sr / refined, corr }
+}
+
+/** Difference function + cumulative mean normalized difference. */
+function fillYinCmnd(
+  signal: Float32Array,
+  n: number,
+  maxTau: number,
+  diff: Float32Array,
+  cmnd: Float32Array,
+): void {
+  diff[0] = 0
+  for (let tau = 1; tau <= maxTau; tau++) {
+    let sum = 0
+    const last = n - tau
+    for (let j = 0; j < last; j++) {
+      const d = signal[j]! - signal[j + tau]!
+      sum += d * d
+    }
+    diff[tau] = sum
+  }
+  cmnd[0] = 1
+  let running = 0
+  for (let tau = 1; tau <= maxTau; tau++) {
+    running += diff[tau]!
+    cmnd[tau] = running > 0 ? (diff[tau]! * tau) / running : 1
+  }
+}
+
+/** One-pole highpass so a loud bass does not erase the vocal/hook period. */
+function highpass1Pole(
+  src: Float32Array,
+  dest: Float32Array,
+  n: number,
+  a: number,
+): void {
+  let prevX = src[0]!
+  let prevY = 0
+  dest[0] = 0
+  for (let i = 1; i < n; i++) {
+    const x = src[i]!
+    const y = a * (prevY + x - prevX)
+    dest[i] = y
+    prevX = x
+    prevY = y
+  }
+}
+
+/**
+ * Steep highpass (three cascaded 1-poles, ~18 dB/oct) so YIN can see a
+ * vocal/hook while a louder bass is still in the mix.
+ */
+function highpassCopy(
+  src: Float32Array,
+  dest: Float32Array,
+  scratch: Float32Array,
+  n: number,
+  sr: number,
+  cutoffHz: number,
+): number {
+  const dt = 1 / sr
+  const rc = 1 / (2 * Math.PI * cutoffHz)
+  const a = rc / (rc + dt)
+  highpass1Pole(src, dest, n, a)
+  highpass1Pole(dest, scratch, n, a)
+  highpass1Pole(scratch, dest, n, a)
+  let energy = 0
+  for (let i = 0; i < n; i++) energy += dest[i]! * dest[i]!
+  return energy
+}
+
+/** Local CMND minima in [fromTau, toTau]. Music uses these as pitch candidates. */
+function collectYinDips(
+  cmnd: Float32Array,
+  fromTau: number,
+  toTau: number,
+  sr: number,
+): YinDip[] {
+  const dips: YinDip[] = []
+  for (let tau = fromTau; tau <= toTau; tau++) {
+    const y = cmnd[tau]!
+    if (y >= 0.45) continue
+    const left = tau > fromTau ? cmnd[tau - 1]! : y
+    const right = tau < toTau ? cmnd[tau + 1]! : y
+    if (y <= left && y < right) {
+      dips.push({ tau, hz: sr / tau, cmnd: y })
+    }
+  }
+  return dips
+}
+
+/**
+ * After a highpass, keep a good-enough lead in the melody band (or a high
+ * hook under 1400 Hz). Bass is not a candidate here.
+ */
+function pickMelodyLeadDip(dips: YinDip[]): YinDip | null {
+  const melody = dips.filter(
+    (d) =>
+      d.hz >= MUSIC_MELODY_MIN_HZ &&
+      d.hz <= MUSIC_MELODY_MAX_HZ &&
+      d.cmnd < MUSIC_MELODY_CMND_MAX,
+  )
+  if (melody.length > 0) return preferLeadHzNearBest(melody)
+
+  const highLead = dips.filter(
+    (d) =>
+      d.hz > MUSIC_MELODY_MAX_HZ &&
+      d.hz <= MUSIC_YIN_FIRST_DIP_MAX_HZ &&
+      d.cmnd < musicDipThreshold(d.hz),
+  )
+  if (highLead.length > 0) return preferLeadHzNearBest(highLead)
+
+  return null
+}
+
+/** Full-mix fallback when the highpass lead pass finds nothing. */
+function pickMusicFallbackDip(dips: YinDip[]): YinDip | null {
+  const highLead = dips.filter(
+    (d) =>
+      d.hz > MUSIC_MELODY_MAX_HZ &&
+      d.hz <= MUSIC_YIN_FIRST_DIP_MAX_HZ &&
+      d.cmnd < musicDipThreshold(d.hz),
+  )
+  if (highLead.length > 0) return preferLowerHzNearBest(highLead)
+
+  const bass = dips.filter(
+    (d) => d.hz < MUSIC_MELODY_MIN_HZ && d.cmnd < musicDipThreshold(d.hz),
+  )
+  if (bass.length > 0) return preferLowerHzNearBest(bass)
+
+  return null
+}
+
+function preferLowerHzNearBest(dips: YinDip[]): YinDip {
+  let bestCmnd = 1
+  for (const d of dips) if (d.cmnd < bestCmnd) bestCmnd = d.cmnd
+  const near = dips.filter((d) => d.cmnd <= bestCmnd + MUSIC_MELODY_CMND_TIE)
+  let picked = near[0]!
+  for (const d of near) {
+    if (d.hz < picked.hz) picked = d
+  }
+  return picked
+}
+
+/**
+ * YIN also dips at 2T / 4T (octave down). Among equally good melody dips,
+ * keep the highest Hz — the actual period — not a subharmonic.
+ */
+function preferLeadHzNearBest(dips: YinDip[]): YinDip {
+  let bestCmnd = 1
+  for (const d of dips) if (d.cmnd < bestCmnd) bestCmnd = d.cmnd
+  const near = dips.filter((d) => d.cmnd <= bestCmnd + MUSIC_MELODY_CMND_TIE)
+  let picked = near[0]!
+  for (const d of near) {
+    if (d.hz > picked.hz) picked = d
+  }
+  return picked
 }
 
 /** High-frequency dips must be cleaner so mix harmonics do not win first. */

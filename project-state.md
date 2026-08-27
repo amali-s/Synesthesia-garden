@@ -2,7 +2,7 @@
 
 Living snapshot of Synesthesia Garden. Update this file at the start of a session (if the repo moved) and at the end of any phase or sizable change.
 
-**Last reviewed:** 2026-08-27 (100px bloom sheets)  
+**Last reviewed:** 2026-08-27 (Music YIN melody-band pick)  
 **Active phase:** none (Phases 1–9 done; Forage is the take-home)  
 **Next recommended work:** [Later / deferred craft](./ROADMAP.md#later--deferred) — one frame language, growth-stage sheets, share URL / clip, PWA
 
@@ -71,8 +71,8 @@ UI in `src/main.ts` is a full-page meadow with two listen sources (one at a time
 Pitch pipeline (`src/audio/pitch.ts`):
 
 - YIN (de Cheveigné) on a DC-removed, box-downsampled window (4× when Nyquist allows, else 2×/1×); parabolic tau; reused scratch buffers (no per-sample alloc)
-- Speaker: plant if RMS ≥ `0.012` and Hz in 80–1000
-- Music: plant if RMS ≥ `0.008` and Hz in 50–4000 (`isVoice` is the plant gate for both)
+- Speaker: plant if RMS ≥ `0.012` and Hz in 80–1000; classic first-dip YIN
+- Music: plant if RMS ≥ `0.008` and Hz in 50–4000 (`isVoice` is the plant gate for both). YIN highpasses (~18 dB/oct at 140 Hz) then prefers a lead in **180–1000 Hz**; hats above 1400 Hz ignored; bass only if that pass finds nothing. 2×4 bed map unchanged.
 - `pitchNorm` is **log2** 80–1000 Hz in Speaker, **50–4000 Hz** in Music (drives beds + mild sat/light; clamps outside)
 - `pitchClassT` is octave position from A (drives petal hue + part of kind)
 - `noteNameFromHz` is equal-temperament from A440 (HUD / inspect only; does not change beds or kind)
@@ -167,7 +167,7 @@ Still later: loudness/timbre meters left the HUD when the top bar took pitch onl
 
 Done. Leftovers / honest limits:
 
-- Dominant mix pitch only (no source separation or instrument→flower)
+- Dominant mix pitch only (no source separation or instrument→flower). Music YIN now prefers a 180–1000 Hz lead over bass/hats, still one note at a time.
 - Pan needs stereo tab/system capture; Speaker and silent-R “mono” stay center
 - BPM is folded into ~58–188; noisy onset storms cannot drop cooldown below 105 ms
 - No verse/chorus labels — section energy is smoothed loudness only
@@ -207,7 +207,7 @@ Done. Shipped 2026-08-25:
 
 - **Vite plugins:** `spotifyApiPlugin()` / `qobuzApiPlugin()` are no longer registered. `npm run dev` returns 404 for `/api/spotify-preview`, `/api/qobuz-resolve`, `/api/qobuz-stream`; the plugin files stay on disk with a Later comment in `vite.config.ts`.
 - **Typecheck:** new `tsconfig.node.json` covers `api/**`, `vite.config.ts`, `vitest.config.ts`, and both dev plugins (Node types, no DOM). `npm run typecheck` runs both configs and `npm run build` calls it, so a broken handler fails the build.
-- **Tests:** Vitest (`npm test`, `npm run test:watch`), 38 tests in `src/**/*.test.ts` — `pitchNorm` (both windows, clamps, constant per-octave step), `Garden.ingest` (plant, cooldown, bed split, grass after a pause, drums plant nothing, clear / listen clock / undo), and both URL parsers. No network, canvas, or Vite-plugin tests.
+- **Tests:** Vitest (`npm test`, `npm run test:watch`), 61 tests in `src/**/*.test.ts` — `pitchNorm` (both windows, clamps, constant per-octave step), Music YIN melody-band mix (bass+vocal, synth+bass, bass-only), `Garden.ingest` (plant, cooldown, bed split, grass after a pause, drums plant nothing, clear / listen clock / undo), and both URL parsers. No network, canvas, or Vite-plugin tests.
 - **Dead HUD CSS (UI audit #17):** deleted `.hud`, `.meters`, `.file-btn`, `.song-*`, `.playback*`, `.hint`, `@keyframes rise`, the rounded gold radii that came with them, and the `:root` tokens only those rules used. Live chrome untouched.
 - **Fonts:** both `@font-face` faces are live and local; no CDN, `@import`, or stale Google Fonts comment anywhere in the tree.
 - **README + `index.html`:** rewritten for the Speaker/Music meadow, the honest Music limits, real scripts, and the two deploy base paths.

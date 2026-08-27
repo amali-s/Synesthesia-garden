@@ -4,6 +4,8 @@ import {
   MUSIC_BED_MAX_HZ,
   MUSIC_BED_MIN_HZ,
   MUSIC_MAX_HZ,
+  MUSIC_MELODY_MAX_HZ,
+  MUSIC_MELODY_MIN_HZ,
   MUSIC_MIN_HZ,
   VOCAL_MAX_HZ,
   VOCAL_MIN_HZ,
@@ -17,14 +19,30 @@ function harmonicTone(
   n: number,
   overtones: number[],
 ): Float32Array {
+  return mixTone(sampleRate, n, [{ hz: fundamentalHz, amp: 1, overtones }])
+}
+
+function mixTone(
+  sampleRate: number,
+  n: number,
+  layers: Array<{ hz: number; amp: number; overtones?: number[] }>,
+): Float32Array {
   const buf = new Float32Array(n)
   const w = (2 * Math.PI) / sampleRate
-  for (let i = 0; i < n; i++) {
-    let s = Math.sin(w * fundamentalHz * i)
-    for (let h = 0; h < overtones.length; h++) {
-      s += overtones[h]! * Math.sin(w * fundamentalHz * (h + 2) * i)
+  for (const layer of layers) {
+    const overtones = layer.overtones ?? []
+    for (let i = 0; i < n; i++) {
+      let s = Math.sin(w * layer.hz * i)
+      for (let h = 0; h < overtones.length; h++) {
+        s += overtones[h]! * Math.sin(w * layer.hz * (h + 2) * i)
+      }
+      buf[i]! += layer.amp * s
     }
-    buf[i] = s
+  }
+  let peak = 0
+  for (let i = 0; i < n; i++) peak = Math.max(peak, Math.abs(buf[i]!))
+  if (peak > 1) {
+    for (let i = 0; i < n; i++) buf[i]! /= peak
   }
   return buf
 }
@@ -141,6 +159,46 @@ describe('yinPitchHz — Music prefers the fundamental', () => {
     expect(found).not.toBeNull()
     expect(found!.hz).toBeGreaterThan(200)
     expect(found!.hz).toBeLessThan(240)
+  })
+})
+
+describe('yinPitchHz — Music melody-band mix', () => {
+  const sr = 48_000
+  const n = 2048
+  const music = { preferFundamental: true as const }
+
+  it('picks a G4 vocal over a stronger bass (Fences-style)', () => {
+    const buf = mixTone(sr, n, [
+      { hz: 62, amp: 1, overtones: [0.45, 0.2] },
+      { hz: 392, amp: 0.7, overtones: [0.35, 0.18] },
+    ])
+    const found = yinPitchHz(buf, sr, MUSIC_MIN_HZ, MUSIC_MAX_HZ, music)
+    expect(found).not.toBeNull()
+    expect(found!.hz).toBeGreaterThan(MUSIC_MELODY_MIN_HZ)
+    expect(found!.hz).toBeGreaterThan(340)
+    expect(found!.hz).toBeLessThan(460)
+    expect(bedFromPitch(pitchNorm(found!.hz, 'music')).id).toMatch(/^f/)
+  })
+
+  it('picks a bright A5 synth over bass, still on the back row', () => {
+    const buf = mixTone(sr, n, [
+      { hz: 82, amp: 1, overtones: [0.4, 0.18] },
+      { hz: 880, amp: 0.65, overtones: [0.25] },
+    ])
+    const found = yinPitchHz(buf, sr, MUSIC_MIN_HZ, MUSIC_MAX_HZ, music)
+    expect(found).not.toBeNull()
+    expect(found!.hz).toBeGreaterThan(800)
+    expect(found!.hz).toBeLessThan(MUSIC_MELODY_MAX_HZ)
+    expect(bedFromPitch(pitchNorm(found!.hz, 'music')).id).toMatch(/^b/)
+  })
+
+  it('still hears a bass-only mix on the front-left fundamental', () => {
+    const buf = mixTone(sr, n, [{ hz: 82, amp: 1, overtones: [0.5, 0.25] }])
+    const found = yinPitchHz(buf, sr, MUSIC_MIN_HZ, MUSIC_MAX_HZ, music)
+    expect(found).not.toBeNull()
+    expect(found!.hz).toBeGreaterThan(70)
+    expect(found!.hz).toBeLessThan(100)
+    expect(bedFromPitch(pitchNorm(found!.hz, 'music')).id).toMatch(/^f/)
   })
 })
 
