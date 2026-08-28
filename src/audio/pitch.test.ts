@@ -9,6 +9,7 @@ import {
   MUSIC_MIN_HZ,
   VOCAL_MAX_HZ,
   VOCAL_MIN_HZ,
+  isIosOrAndroidDevice,
   pitchNorm,
   yinPitchHz,
 } from './pitch'
@@ -199,6 +200,44 @@ describe('yinPitchHz — Music melody-band mix', () => {
     expect(found!.hz).toBeGreaterThan(70)
     expect(found!.hz).toBeLessThan(100)
     expect(bedFromPitch(pitchNorm(found!.hz, 'music')).id).toMatch(/^f/)
+  })
+})
+
+describe('isIosOrAndroidDevice', () => {
+  const iphone =
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1'
+  const androidPhone =
+    'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36'
+  const ipadLegacy =
+    'Mozilla/5.0 (iPad; CPU OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1'
+  const desktopChrome =
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+  const desktopSafari =
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15'
+
+  it('detects iPhone and Android phones', () => {
+    expect(isIosOrAndroidDevice(iphone)).toBe(true)
+    expect(isIosOrAndroidDevice(androidPhone)).toBe(true)
+  })
+
+  it('detects iPad, including iPadOS desktop UA with touch', () => {
+    expect(isIosOrAndroidDevice(ipadLegacy)).toBe(true)
+    expect(
+      isIosOrAndroidDevice(desktopSafari, { platform: 'MacIntel', maxTouchPoints: 5 }),
+    ).toBe(true)
+  })
+
+  it('leaves real Macs and desktop Chrome alone', () => {
+    expect(
+      isIosOrAndroidDevice(desktopChrome, { platform: 'MacIntel', maxTouchPoints: 0 }),
+    ).toBe(false)
+    expect(
+      isIosOrAndroidDevice(desktopSafari, { platform: 'MacIntel', maxTouchPoints: 0 }),
+    ).toBe(false)
+  })
+
+  it('trusts the UA-CH mobile bit when a phone requests a desktop UA', () => {
+    expect(isIosOrAndroidDevice(desktopChrome, { uaChMobile: true })).toBe(true)
   })
 })
 

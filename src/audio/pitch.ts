@@ -621,6 +621,41 @@ export function displayAudioCaptureSupported(): boolean {
   return !isSafari
 }
 
+export type DeviceHints = {
+  platform?: string
+  maxTouchPoints?: number
+  /** Chromium UA-CH `mobile` bit — still true on some phones that request a desktop UA. */
+  uaChMobile?: boolean | null
+}
+
+/**
+ * Phones and tablets on iOS / Android (including iPadOS, which reports as Mac).
+ * Music mode’s tab-share loop does not exist here; pass navigator fields in the browser.
+ */
+export function isIosOrAndroidDevice(ua: string, hints: DeviceHints = {}): boolean {
+  if (hints.uaChMobile === true) return true
+  if (/Android/i.test(ua)) return true
+  if (/iPhone|iPod|iPad/.test(ua)) return true
+  // iPadOS 13+ (and iPhone “Request Desktop Website”) use a Macintosh UA.
+  const platform = hints.platform ?? ''
+  const touch = hints.maxTouchPoints ?? 0
+  if (/Mac/i.test(platform) && touch > 1) return true
+  return false
+}
+
+/** False on iOS/Android devices — Speaker only. Desktop (incl. Safari) still offers the toggle. */
+export function musicModeOffered(): boolean {
+  if (typeof navigator === 'undefined') return true
+  const uaData = navigator as Navigator & {
+    userAgentData?: { mobile?: boolean }
+  }
+  return !isIosOrAndroidDevice(navigator.userAgent, {
+    platform: navigator.platform,
+    maxTouchPoints: navigator.maxTouchPoints,
+    uaChMobile: uaData.userAgentData?.mobile ?? null,
+  })
+}
+
 function isUserDismissedCapture(err: unknown): boolean {
   if (!(err instanceof DOMException)) return false
   return err.name === 'NotAllowedError' || err.name === 'AbortError'

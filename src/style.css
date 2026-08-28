@@ -447,6 +447,10 @@ body {
     2px 2px 0 var(--ink);
 }
 
+.mode-toggle[hidden] {
+  display: none;
+}
+
 .mode-btn {
   font-family: var(--font);
   font-size: 0.88rem;

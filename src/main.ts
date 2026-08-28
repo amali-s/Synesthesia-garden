@@ -3,6 +3,7 @@ import {
   DisplayAudioError,
   PitchDetector,
   displayAudioCaptureSupported,
+  musicModeOffered,
   noteNameFromHz,
   pitchNorm,
   type ListenMode,
@@ -87,6 +88,7 @@ const listenBtn = document.querySelector<HTMLButtonElement>('#listen-btn')!
 const forageBtn = document.querySelector<HTMLButtonElement>('#forage-btn')!
 const clearBtn = document.querySelector<HTMLButtonElement>('#clear-btn')!
 const undoBtn = document.querySelector<HTMLButtonElement>('#undo-btn')!
+const modeToggle = document.querySelector<HTMLDivElement>('.mode-toggle')!
 const modeSpeakerBtn = document.querySelector<HTMLButtonElement>('#mode-speaker')!
 const modeMusicBtn = document.querySelector<HTMLButtonElement>('#mode-music')!
 const pitchFill = document.querySelector<HTMLDivElement>('#pitch-fill')!
@@ -393,6 +395,7 @@ async function startListen(): Promise<void> {
 }
 
 function applyMode(next: ListenMode): void {
+  if (next === 'music' && !musicModeOffered()) return
   if (listenMode === next) return
   const wasListening = listening
   if (wasListening) stopListen()
@@ -403,6 +406,12 @@ function applyMode(next: ListenMode): void {
     return
   }
   setStatus(idleStatus())
+}
+
+function syncModeToggleVisibility(): void {
+  const offer = musicModeOffered()
+  modeToggle.hidden = !offer
+  if (!offer) applyMode('speaker')
 }
 
 async function mailBouquet(flowers: readonly FlowerPlant[]): Promise<void> {
@@ -573,6 +582,8 @@ canvas.addEventListener('pointercancel', () => {
   setBloomCursor(false)
   hideInspect()
 })
+
+syncModeToggleVisibility()
 
 modeSpeakerBtn.addEventListener('click', () => {
   applyMode('speaker')
