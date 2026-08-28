@@ -310,7 +310,7 @@ export class ForageRun {
       return null
     }
 
-    this.pose = 'walk'
+    this.pose = 'mail'
     this.lifting = null
     this.mailed = true
     if (!this.mailEmitted && now - this.dwellStart >= MAIL_MS * 0.28) {

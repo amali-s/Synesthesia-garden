@@ -120,7 +120,7 @@ export class GardenRenderer {
     for (let i = 0; i < carry.length; i++) {
       const plant = carry[i]!
       const ox = forage.foxX - forage.facing * (2 + i * 2)
-      const oy = forage.foxY - 9 - i
+      const oy = forage.foxY - 11 - i
       drawCarriedBloom(ctx, plant, ox, oy, scale, 8)
     }
     drawFox(

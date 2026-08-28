@@ -6,7 +6,7 @@ import type { FlowerPlant } from './world'
  * Sits on the top gravel walk, above the back-right bed — not on timber.
  */
 export const MAILBOX = { x: 297, y: 1 } as const
-export const MAILBOX_W = 21
+export const MAILBOX_W = 22
 export const MAILBOX_H = 30
 /** Where the fox stands to post the bouquet (on the same gravel walk). */
 export const MAILBOX_STAND = { x: 286, y: 24 } as const
@@ -19,15 +19,16 @@ export const FOX_EXIT_RIGHT = { x: 338, y: 22 } as const
 
 /** Drawn size of the fox sprite in logical pixels (feet at the anchor). */
 export const FOX_W = 26
-export const FOX_H = 14
+export const FOX_H = 18
 
-export type FoxPose = 'walk' | 'sniff' | 'pick'
+export type FoxPose = 'walk' | 'sniff' | 'pick' | 'mail'
 
-type SheetId = 'fox0' | 'fox1' | 'mailEmpty' | 'mailOutgoing' | 'bouquet'
+type SheetId = 'fox0' | 'fox1' | 'foxStill' | 'mailEmpty' | 'mailOutgoing' | 'bouquet'
 
 const SHEET_FILES: Record<SheetId, string> = {
   fox0: 'fox-walk-0.png',
   fox1: 'fox-walk-1.png',
+  foxStill: 'fox-still.png',
   mailEmpty: 'mail-empty.png',
   mailOutgoing: 'mail-outgoing.png',
   bouquet: 'bouquet-wrap.png',
@@ -104,10 +105,13 @@ export function drawFox(
   y: number,
   scale: number,
   facing: 1 | -1,
-  _pose: FoxPose,
+  pose: FoxPose,
   frame: 0 | 1,
 ): void {
-  const img = sheets.get(frame === 0 ? 'fox0' : 'fox1')
+  const img =
+    pose === 'walk'
+      ? sheets.get(frame === 0 ? 'fox0' : 'fox1')
+      : sheets.get('foxStill') ?? sheets.get('fox0')
   if (!img) return
   const dx = Math.round(x) - Math.floor(FOX_W / 2)
   const dy = Math.round(y) - FOX_H + 1

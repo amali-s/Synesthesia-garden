@@ -135,9 +135,11 @@ describe('ForageRun', () => {
     let now = 0
     let done = false
     let mailed = false
+    const poses = new Set<string>()
     for (let i = 0; i < 400; i++) {
       now += 48
       const ev = run.tick(now)
+      if (!run.done) poses.add(run.view(now).pose)
       if (ev?.type === 'mail') mailed = true
       if (ev?.type === 'done') {
         done = true
@@ -147,6 +149,8 @@ describe('ForageRun', () => {
     }
     expect(done).toBe(true)
     expect(mailed).toBe(false)
+    expect(poses.has('sniff')).toBe(true)
+    expect(poses.has('mail')).toBe(false)
     expect(garden.plants).toHaveLength(3)
   })
 
@@ -161,9 +165,11 @@ describe('ForageRun', () => {
     let picksSeen = 0
     let mailed = false
     let done = false
+    const poses = new Set<string>()
     for (let i = 0; i < 2500; i++) {
       now += 48
       const ev = run.tick(now)
+      if (!run.done) poses.add(run.view(now).pose)
       if (ev?.type === 'pick') picksSeen += 1
       if (ev?.type === 'mail') mailed = true
       if (ev?.type === 'done') {
@@ -174,6 +180,7 @@ describe('ForageRun', () => {
     }
     expect(done).toBe(true)
     expect(mailed).toBe(true)
+    expect(poses.has('mail')).toBe(true)
     expect(picksSeen).toBe(8)
     expect(garden.plants.filter((p) => p.type === 'flower')).toHaveLength(0)
     expect(run.bouquet).toHaveLength(8)
