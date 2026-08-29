@@ -7,10 +7,10 @@ Plan and acceptance criteria live in [`ROADMAP.md`](./ROADMAP.md); what is actua
 ## The loop
 
 1. Pick **Speaker** or **Music** in the top bar.
-2. Press **Listen** (or the **L** key). The same button reads **Stop** while capturing.
+2. Press **Play** (or the **P** key). The same button reads **Pause** while capturing.
 3. Sing, talk, or play something. Pitched sound plants flowers across eight timber beds — low and left in front, high and right at the back. Quiet gaps sprout grass. Drums pulse the bed instead of planting.
 4. **Hover** a flower (or tap it on touch) to hear its pitch chime and see its kind, Hz, and note in the mapping card.
-5. **Stop**, then **Forage** (**K**). A fox harvests the fullest beds and mails a small bouquet PNG. **Clear garden** (**C**) empties the beds, with an Undo for a few seconds.
+5. **Pause**, then **Forage** (**K**). A fox harvests the fullest beds and mails a small bouquet PNG. **Clear garden** (**C**) empties the beds, with an Undo for a few seconds.
 
 The pitch meter shows live Hz plus the equal-temperament note from A440. The card in the bottom-right corner is the legend: a 2×4 bed compass driven by the same math as planting.
 
@@ -28,7 +28,7 @@ Music uses `getDisplayMedia`, so it inherits the browser's rules — the honest 
 
 Speaker and Music never run at the same time; switching modes while listening restarts capture.
 
-Streaming links (Spotify, Qobuz) are **hidden** — the code is still in the tree but nothing in the UI reaches it, and **Listen needs no secrets or `.env` file**.
+Streaming links (Spotify, Qobuz) are **hidden** — the code is still in the tree but nothing in the UI reaches it, and **Play needs no secrets or `.env` file**.
 
 ## Develop
 

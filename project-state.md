@@ -14,7 +14,7 @@ Plan and acceptance criteria: [`ROADMAP.md`](./ROADMAP.md)
 
 A pixel-art meadow that grows from **voice or music already playing on the device**: pitch, loudness, timbre, and rhythm become kind, hue, size, and motion. Speaker mode uses the microphone; Music mode captures tab/window/system audio. YIN pitch detector (downsampled); flowers from pitched sound, grass from quiet. Art Nouveau frame and palette (Mucha / Tiffany jewel tones).
 
-Shipped loop: **Speaker or Music → Listen → flowers; pause → grass in gaps; Stop (same button); hover/tap a bloom to hear its pitch and inspect kind + note; Stop, then Forage — a fox harvests the fullest beds and mails a bouquet PNG; Clear garden (Undo for a few seconds).**
+Shipped loop: **Speaker or Music → Play → flowers; pause → grass in gaps; Pause (same button); hover/tap a bloom to hear its pitch and inspect kind + note; Pause, then Forage — a fox harvests the fullest beds and mails a bouquet PNG; Clear garden (Undo for a few seconds).**
 
 ---
 
@@ -22,8 +22,8 @@ Shipped loop: **Speaker or Music → Listen → flowers; pause → grass in gaps
 
 | Area | Status |
 | --- | --- |
-| Mic pitch garden | **Shipped** — Listen / Stop on one primary button; Forage; Clear |
-| Speaker vs Music listen | **Shipped** — segmented cream/brass toggle; Music uses `getDisplayMedia` + Share audio; only Listen is filled green |
+| Mic pitch garden | **Shipped** — Play / Pause on one primary button; Forage; Clear |
+| Speaker vs Music listen | **Shipped** — segmented cream/brass toggle next to Pitch; Music uses `getDisplayMedia` + Share audio; only Play is filled green |
 | Pitch → patch; chroma + timbre → kind/hue | **Shipped** — log2 80–1000 Hz (Speaker); 50–4000 Hz (Music) |
 | Loudness → stem + bloom | **Shipped** — log RMS, AGC off |
 | Timbre → kind (with chroma) + contrast | **Shipped** — spectral centroid |
@@ -56,16 +56,16 @@ Shipped loop: **Speaker or Music → Listen → flowers; pause → grass in gaps
 
 UI in `src/main.ts` is a full-page meadow with two listen sources (one at a time):
 
-- **Top bar** — Listen (Stop while capturing), Forage, Clear garden (ghost), **Speaker | Music**, pitch meter (Hz + note)
+- **Top bar** — Play (Pause while capturing), Forage, Clear garden (ghost), helper copy, **Speaker | Music** next to the pitch meter (Hz + note)
 - **Speaker** (default) — `getUserMedia`, echo cancellation / noise suppression on, **AGC off**, vocal 80–1000 Hz
 - **Music** — `getDisplayMedia` with audio required; video track muted/ignored; echo cancel / noise suppress / AGC **off**; pitch window **50–4000 Hz** for planting *and* `pitchNorm` (so high instruments are not all clamped to the top bed). Capture is **not** played through the garden (no double audio)
-- **Listen / Stop** — one `#listen-btn` (`.btn.primary`, `aria-pressed` while capturing, `aria-keyshortcuts="L"`). Idle label **Listen** starts the selected mode; while listening the same button reads **Stop**. Disabled only during the mic/share permission wait. Switching mode while listening stops the current stream, then starts the new one. Share-ended and capture errors return the button to Listen. Keyboard **L** toggles the same path (ignored with Cmd/Ctrl/Alt).
-- **Forage** — enabled only when not listening (Stop first). Pixel fox enters top-left; if fewer than 6 living flowers can be taken under the caps, it sniffs and walks back out. Otherwise it harvests from the fullest patches (living count), at most 4 stems per bed and 12 in the bouquet (minimum 6). Picked flowers leave the bed. A mailbox sits in the top-right with its red flag down except while the fox is posting. Download is a small transparent PNG of the loose bunch in cream paper (`synesthesia-bouquet-YYYY-MM-DD.png`). Keyboard **K**. Reduced motion still plays the walk.
+- **Play / Pause** — one `#listen-btn` (`.btn.primary`, `aria-pressed` while capturing, `aria-keyshortcuts="P"`). Idle label **Play** starts the selected mode; while capturing the same button reads **Pause**. Disabled only during the mic/share permission wait. Switching mode while capturing stops the current stream, then starts the new one. Share-ended and capture errors return the button to Play. Keyboard **P** toggles the same path (ignored with Cmd/Ctrl/Alt).
+- **Forage** — enabled only when not capturing (Pause first). Pixel fox enters top-left; if fewer than 6 living flowers can be taken under the caps, it sniffs and walks back out. Otherwise it harvests from the fullest patches (living count), at most 4 stems per bed and 12 in the bouquet (minimum 6). Picked flowers leave the bed. A mailbox sits in the top-right with its red flag down except while the fox is posting. Download is a small transparent PNG of the loose bunch in cream paper (`synesthesia-bouquet-YYYY-MM-DD.png`). Keyboard **K**. Reduced motion still plays the walk.
 - **Clear garden** — ghost/secondary chrome (not Forage’s brass fill); instant reset of plants (listen-time sky keeps going); **Undo** for ~7 s from a plant snapshot; a new flower drops the snapshot. Keyboard **C**. Cancels an in-flight forage.
 - **Pitch meter** — live Hz + equal-temperament note from A440 (`A4` / `C5`); idle shows `—`
 - **Mapping card** — floating bottom-right on the meadow: 2×4 bed compass (same `bedFromPitch(pitchNorm)` as planting) + legend (low front-left → high back-right; timbre + chroma pick kind). Hover/tap a flower fills the card with a larger tinted sprite, kind name, Hz + note (chime still plays). Grass / empty soil stay silent and do not inspect.
 - **Pixel garden** — 320×200 logical, integer backing scale; CSS fills the vine glass (square-pixel letterbox was tried, then dropped so the bed sits against the frame). **2×4** timber patches (`f0`–`f3` front / `b0`–`b3` back); empty visit shows gravel courtyard + “A courtyard at rest”; seven flower kinds from cropped ~43–68×78–86 sheets (was 16–28×32); dest height ~24–32 logical px; green vine frame and Figma chrome. Courtyard + timber + soil are cached offscreen and blit each frame; plants + live pitch pulse + mailbox/fox + hour gel draw on top.
-- **Bloom chime** — hover a flower (mouse/pen) or tap (touch) plays a short sine/bell at that plant’s stored `hz`; click while hovering chimes again; one hover-chime until the pointer leaves; grass and empty soil are silent; wilted blooms still chime while on screen. Uses the same AudioContext as Listen, routed to destination (not the analyser). `BloomChime.muted` follows `prefers-reduced-motion`.
+- **Bloom chime** — hover a flower (mouse/pen) or tap (touch) plays a short sine/bell at that plant’s stored `hz`; click while hovering chimes again; one hover-chime until the pointer leaves; grass and empty soil are silent; wilted blooms still chime while on screen. Uses the same AudioContext as Play, routed to destination (not the analyser). `BloomChime.muted` follows `prefers-reduced-motion`.
 - **Reduced motion** — `matchMedia('(prefers-reduced-motion: reduce)')` freezes sway / onset pulse / seed grow and the live pitch blink; lifecycle still advances. Keyboard focus uses ink/brass `:focus-visible` rings on `.btn` / `.mode-btn`.
 
 Pitch pipeline (`src/audio/pitch.ts`):

@@ -79,7 +79,49 @@ export class Garden {
   private grassBedCursor = 0
 
   constructor(config: GardenConfig) {
-    this.config = config
+    this.config = { width: config.width, height: config.height }
+  }
+
+  /**
+   * Capture each plant’s place in its soil box (0–1) before the courtyard reflows.
+   */
+  snapshotCells(): Array<{ plant: Plant; u: number; v: number }> {
+    return this.plants.map((p) => {
+      const r = soilRect(bedById(p.bedId))
+      const soilW = Math.max(1, r.x1 - r.x0)
+      const soilH = Math.max(1, r.y1 - r.y0)
+      return {
+        plant: p,
+        u: (p.x - r.x0) / soilW,
+        v: (p.y - r.y0) / soilH,
+      }
+    })
+  }
+
+  /**
+   * After a courtyard reflow, map plants into the new soil so they spread
+   * with the dirt instead of clustering in the old cells. Pass cells from
+   * snapshotCells() taken *before* bed geometry changed.
+   */
+  applyRelayout(
+    width: number,
+    height: number,
+    saved: Array<{ plant: Plant; u: number; v: number }>,
+  ): void {
+    this.config.width = width
+    this.config.height = height
+    if (saved.length === 0) return
+    this.plants = []
+    this.byBed = emptyBedPlants()
+    for (const { plant, u, v } of saved) {
+      const bed = bedById(plant.bedId)
+      const r = soilRect(bed)
+      const g = soilGrid(bed, CELL_W, CELL_H)
+      const x = r.x0 + Math.min(1, Math.max(0, u)) * Math.max(1, r.x1 - r.x0)
+      const y = r.y0 + Math.min(1, Math.max(0, v)) * Math.max(1, r.y1 - r.y0)
+      const stem = gridStem(g, gridCol(g, x), gridRow(g, y))
+      this.insertPlant({ ...plant, x: stem.x, y: stem.y })
+    }
   }
 
   /** Living + wilting plants in this patch, back-to-front (ascending y). */

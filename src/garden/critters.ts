@@ -1,3 +1,4 @@
+import { GARDEN_BEDS, GRID_PAD_TOP, GRID_PAD_TOP_BASE, setGridPadTop } from './beds'
 import { tintedBloomHeadCanvas } from './bloomArt'
 import type { FlowerPlant } from './world'
 
@@ -5,21 +6,58 @@ import type { FlowerPlant } from './world'
  * Top-left of the mailbox sprite (logical px).
  * Sits on the top gravel walk, above the back-right bed — not on timber.
  */
-export const MAILBOX = { x: 297, y: 1 } as const
-export const MAILBOX_W = 22
-export const MAILBOX_H = 30
+export const MAILBOX = { x: 294, y: 5 }
+export const MAILBOX_W_BASE = 16
+export const MAILBOX_H_BASE = 22
+/** Native mail-empty.png size — used on portrait so the box reads on a phone. */
+export const MAILBOX_W_PORTRAIT = 47
+export const MAILBOX_H_PORTRAIT = 64
+export let MAILBOX_W = MAILBOX_W_BASE
+export let MAILBOX_H = MAILBOX_H_BASE
+
+/** Native-size mailbox and 1.5× fox on 2×4 glass; floor size on 4×2. */
+export function syncMailboxForView(cols: number, rows: number): void {
+  const portrait = rows > cols
+  MAILBOX_W = portrait ? MAILBOX_W_PORTRAIT : MAILBOX_W_BASE
+  MAILBOX_H = portrait ? MAILBOX_H_PORTRAIT : MAILBOX_H_BASE
+  FOX_W = portrait ? Math.round(FOX_W_BASE * FOX_ZOOM_PORTRAIT) : FOX_W_BASE
+  FOX_H = portrait ? Math.round(FOX_H_BASE * FOX_ZOOM_PORTRAIT) : FOX_H_BASE
+  setGridPadTop(portrait ? MAILBOX_H + 10 : GRID_PAD_TOP_BASE)
+}
 /** Where the fox stands to post the bouquet (on the same gravel walk). */
-export const MAILBOX_STAND = { x: 286, y: 24 } as const
-/** Off-canvas start / empty-handed exit (top left gravel). */
-export const FOX_ENTER = { x: -20, y: 22 } as const
+export const MAILBOX_STAND = { x: 280, y: 19 }
+/** Off-canvas start / empty-handed exit (top left gravel, beside the beds). */
+export const FOX_ENTER = { x: -12, y: 19 }
 /** Courtyard sniff when there is not enough to forage. */
-export const FOX_SNIFF = { x: 42, y: 22 } as const
-/** Exit after mailing (top right, past the box). */
-export const FOX_EXIT_RIGHT = { x: 338, y: 22 } as const
+export const FOX_SNIFF = { x: 42, y: 19 }
+/** Exit after mailing (past the box, still on the bed block’s walk). */
+export const FOX_EXIT_RIGHT = { x: 330, y: 19 }
+
+/** Park the mailbox on the patch block’s top walk, at the back-right bed. */
+export function placeCritters(): void {
+  const padTop = Math.min(...GARDEN_BEDS.map((b) => b.y))
+  const walkTop = Math.max(0, padTop - GRID_PAD_TOP)
+  const backRow = GARDEN_BEDS.filter((b) => b.y === padTop)
+  const left = backRow.reduce((a, b) => (a.x <= b.x ? a : b))
+  const right = backRow.reduce((a, b) => (a.x >= b.x ? a : b))
+  MAILBOX.x = right.x + right.w - MAILBOX_W - 2
+  MAILBOX.y = walkTop + Math.max(1, Math.floor((GRID_PAD_TOP - MAILBOX_H) / 2))
+  MAILBOX_STAND.x = MAILBOX.x - 14
+  MAILBOX_STAND.y = Math.max(MAILBOX.y + MAILBOX_H - 8, walkTop + 8)
+  FOX_ENTER.x = left.x - 20
+  FOX_ENTER.y = MAILBOX_STAND.y
+  FOX_SNIFF.x = left.x + 34
+  FOX_SNIFF.y = MAILBOX_STAND.y
+  FOX_EXIT_RIGHT.x = right.x + right.w + 18
+  FOX_EXIT_RIGHT.y = MAILBOX_STAND.y
+}
 
 /** Drawn size of the fox sprite in logical pixels (feet at the anchor). */
-export const FOX_W = 26
-export const FOX_H = 18
+export const FOX_W_BASE = 26
+export const FOX_H_BASE = 18
+export const FOX_ZOOM_PORTRAIT = 1.5
+export let FOX_W = FOX_W_BASE
+export let FOX_H = FOX_H_BASE
 
 export type FoxPose = 'walk' | 'sniff' | 'pick' | 'mail'
 

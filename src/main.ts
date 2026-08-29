@@ -3,13 +3,12 @@ import {
   DisplayAudioError,
   PitchDetector,
   displayAudioCaptureSupported,
-  musicModeOffered,
   noteNameFromHz,
   pitchNorm,
   type ListenMode,
 } from './audio/pitch'
 import { BloomChime } from './audio/chime'
-import { bedFromPitch, type BedId } from './garden/beds'
+import { bedFromPitch, compassBedIds, GRID_COLS, GRID_ROWS, type BedId } from './garden/beds'
 import { loadBloomArt, tintedBloomCanvas } from './garden/bloomArt'
 import { loadCritterArt } from './garden/critters'
 import { Garden, plantLife, type FlowerPlant, type Plant } from './garden/world'
@@ -22,7 +21,7 @@ const LOGICAL_W = 320
 const LOGICAL_H = 200
 const UNDO_MS = 7000
 const TOUCH_INSPECT_MS = 2800
-const COMPASS_BEDS: BedId[] = ['b0', 'b1', 'b2', 'b3', 'f0', 'f1', 'f2', 'f3']
+const COMPASS_BEDS: BedId[] = compassBedIds()
 
 function compassHtml(): string {
   return `<div class="bed-compass" role="img" aria-label="Pitch beds, none highlighted">${COMPASS_BEDS.map((id) => `<span class="bed-cell" data-bed="${id}"></span>`).join('')}</div>`
@@ -35,24 +34,24 @@ app.innerHTML = `
       <div class="top-bar__primary">
         <h1 class="logo">Synesthesia Garden</h1>
         <div class="controls">
-          <button type="button" class="btn primary" id="listen-btn" aria-pressed="false" aria-keyshortcuts="L">Listen</button>
-          <button type="button" class="btn ghost" id="clear-btn" aria-keyshortcuts="C">Clear garden</button>
-          <div class="mode-toggle" role="group" aria-label="Listen source">
-            <button type="button" class="mode-btn" id="mode-speaker" aria-pressed="true">Speaker</button>
-            <button type="button" class="mode-btn" id="mode-music" aria-pressed="false">Music</button>
-          </div>
+          <button type="button" class="btn primary" id="listen-btn" aria-pressed="false" aria-keyshortcuts="P">Play</button>
+          <button type="button" class="btn ghost" id="clear-btn" aria-keyshortcuts="C" disabled>Clear garden</button>
           <button type="button" class="btn" id="forage-btn" aria-label="Forage a bouquet" aria-keyshortcuts="K">Forage</button>
+          <p class="listen-hint" id="listen-hint">Click play then speak into the microphone</p>
         </div>
+      </div>
+      <div class="mode-toggle" role="group" aria-label="Play source">
+        <button type="button" class="mode-btn" id="mode-speaker" aria-pressed="true">Speaker</button>
+        <button type="button" class="mode-btn" id="mode-music" aria-pressed="false">Music</button>
       </div>
       <div class="top-bar__meter">
         <div class="meter pitch-meter" title="Pitch">
           <span class="meter-label">Pitch</span>
           <div class="meter-track"><div class="meter-fill" id="pitch-fill"></div></div>
-          <span class="meter-value" id="pitch-hz">— Hz</span>
           <span class="meter-note" id="pitch-note" aria-label="Note">—</span>
         </div>
         <div class="status-row">
-          <div class="status" id="status">Tap Listen to plant with your voice · hover a bloom to hear it</div>
+          <div class="status" id="status" aria-live="polite" aria-atomic="true">resting</div>
           <button type="button" class="btn ghost undo-btn" id="undo-btn" hidden>Undo</button>
         </div>
       </div>
@@ -61,22 +60,28 @@ app.innerHTML = `
     <main class="meadow">
       <div class="window-frame">
         <div class="window-frame__glass">
-          <canvas id="garden" aria-label="Pixel art garden grown from your voice or music"></canvas>
-          <p class="courtyard-caption" id="courtyard-caption">A courtyard at rest</p>
-          <aside class="map-modal" id="map-modal" aria-label="Garden map">
-            <div class="bloom-inspect" id="bloom-inspect" hidden>
-              <canvas id="inspect-art" width="60" height="86" aria-hidden="true"></canvas>
-              <div class="bloom-inspect__meta">
-                <strong id="inspect-kind"></strong>
-                <span id="inspect-pitch"></span>
-              </div>
+          <div class="garden-stage">
+            <canvas id="garden" aria-label="Pixel art garden grown from your voice or music"></canvas>
+            <p class="courtyard-caption" id="courtyard-caption">A courtyard at rest</p>
+          </div>
+        </div>
+        <aside class="map-modal" id="map-modal" aria-label="Garden map">
+          <div class="bloom-inspect" id="bloom-inspect" hidden>
+            <canvas id="inspect-art" width="60" height="86" aria-hidden="true"></canvas>
+            <div class="bloom-inspect__meta">
+              <strong id="inspect-kind"></strong>
+              <span id="inspect-pitch"></span>
             </div>
-            <div class="map-modal__key">
-              ${compassHtml()}
+          </div>
+          <div class="map-modal__key">
+            ${compassHtml()}
+            <div class="map-modal__copy">
+              <p class="map-modal__mode" id="map-mode-hint">Click play then speak into the microphone</p>
+              <p class="map-modal__hint">Hover to hear the flower.</p>
               <p class="map-modal__legend">Low front-left → high back-right. Timbre + chroma pick kind, not register.</p>
             </div>
-          </aside>
-        </div>
+          </div>
+        </aside>
       </div>
     </main>
     <div class="sr-only" id="inspect-live" aria-live="polite" aria-atomic="true"></div>
@@ -88,15 +93,16 @@ const listenBtn = document.querySelector<HTMLButtonElement>('#listen-btn')!
 const forageBtn = document.querySelector<HTMLButtonElement>('#forage-btn')!
 const clearBtn = document.querySelector<HTMLButtonElement>('#clear-btn')!
 const undoBtn = document.querySelector<HTMLButtonElement>('#undo-btn')!
-const modeToggle = document.querySelector<HTMLDivElement>('.mode-toggle')!
 const modeSpeakerBtn = document.querySelector<HTMLButtonElement>('#mode-speaker')!
 const modeMusicBtn = document.querySelector<HTMLButtonElement>('#mode-music')!
 const pitchFill = document.querySelector<HTMLDivElement>('#pitch-fill')!
-const pitchHz = document.querySelector<HTMLSpanElement>('#pitch-hz')!
 const pitchNote = document.querySelector<HTMLSpanElement>('#pitch-note')!
 const compassCells = [...document.querySelectorAll<HTMLSpanElement>('.bed-cell')]
 const statusEl = document.querySelector<HTMLDivElement>('#status')!
+const listenHint = document.querySelector<HTMLParagraphElement>('#listen-hint')!
+const mapModeHint = document.querySelector<HTMLParagraphElement>('#map-mode-hint')!
 const glass = document.querySelector<HTMLDivElement>('.window-frame__glass')!
+const gardenStage = document.querySelector<HTMLDivElement>('.garden-stage')!
 const courtyardCaption = document.querySelector<HTMLParagraphElement>('#courtyard-caption')!
 const bloomInspect = document.querySelector<HTMLDivElement>('#bloom-inspect')!
 const inspectArt = document.querySelector<HTMLCanvasElement>('#inspect-art')!
@@ -133,15 +139,9 @@ function glassBox(): { maxW: number; maxH: number } {
   }
 }
 
-/** Integer backing scale from the glass; CSS still fills the vine (no side gutters). */
-function computeBackingScale(): number {
-  const { maxW, maxH } = glassBox()
-  return Math.max(1, Math.round(Math.min(maxW / LOGICAL_W, maxH / LOGICAL_H)))
-}
+type GardenMood = 'resting' | 'Blooming' | 'quiet'
 
-const renderer = new GardenRenderer(canvas, LOGICAL_W, LOGICAL_H, {
-  scale: computeBackingScale(),
-})
+const renderer = new GardenRenderer(canvas, LOGICAL_W, LOGICAL_H, { scale: 1 })
 void loadBloomArt()
 void loadCritterArt()
 
@@ -156,40 +156,64 @@ applyReducedMotion()
 motionQuery.addEventListener('change', applyReducedMotion)
 
 function fitCanvas(): void {
-  renderer.setScale(computeBackingScale())
-  canvas.style.left = '0'
-  canvas.style.top = '0'
-  canvas.style.right = '0'
-  canvas.style.bottom = '0'
+  const w = glassBox().maxW
+  const h = glassBox().maxH
+  const saved = garden.snapshotCells()
+  const moved = renderer.setView(w, h)
+  if (moved) {
+    const size = renderer.getLogicalSize()
+    garden.applyRelayout(size.width, size.height, saved)
+    syncCompassLayout()
+  }
+  const view = renderer.getViewSize()
   canvas.style.width = '100%'
-  canvas.style.height = '100%'
+  canvas.style.height = `${view.height}px`
+  gardenStage.style.minHeight = `${view.height}px`
+}
+
+function syncCompassLayout(): void {
+  const ids = compassBedIds()
+  for (const compass of document.querySelectorAll<HTMLElement>('.bed-compass')) {
+    const inMap = compass.closest('.map-modal') !== null
+    const cell = inMap ? 10 : 8
+    compass.classList.toggle('is-portrait', GRID_ROWS > GRID_COLS)
+    compass.style.gridTemplateColumns = `repeat(${GRID_COLS}, ${cell}px)`
+    compass.style.gridTemplateRows = `repeat(${GRID_ROWS}, ${cell}px)`
+    const cells = [...compass.querySelectorAll<HTMLSpanElement>('.bed-cell')]
+    for (const id of ids) {
+      const cellEl = cells.find((c) => c.dataset.bed === id)
+      if (cellEl) compass.appendChild(cellEl)
+    }
+  }
 }
 
 function syncCourtyardCaption(): void {
-  courtyardCaption.hidden = garden.plants.length > 0
+  const empty = garden.plants.length === 0
+  courtyardCaption.hidden = !empty
+  clearBtn.disabled = empty
 }
 
 fitCanvas()
 syncCourtyardCaption()
 
-function setStatus(text: string): void {
-  statusEl.textContent = text
+function setMood(mood: GardenMood): void {
+  if (statusEl.textContent === mood) return
+  statusEl.textContent = mood
 }
 
-function idleStatus(): string {
+function setHint(text: string): void {
+  if (listenHint.textContent !== text) listenHint.textContent = text
+  if (mapModeHint.textContent !== text) mapModeHint.textContent = text
+}
+
+function plantHint(): string {
   if (listenMode === 'music') {
     if (!displayAudioCaptureSupported()) {
       return 'This browser can’t capture tab or system audio. Use Speaker, or try Chrome or Edge.'
     }
-    return 'Play a song, then Listen and share that tab or window with audio · hover a bloom to hear it'
+    return 'Click play then share a tab playing music'
   }
-  return 'Tap Listen to plant with your voice · hover a bloom to hear it'
-}
-
-function listeningStatus(): string {
-  return listenMode === 'music'
-    ? 'Following the mix · drums sway, notes plant'
-    : 'Listening — speak or hum'
+  return 'Click play then speak into the microphone'
 }
 
 function syncModeButtons(): void {
@@ -200,7 +224,7 @@ function syncModeButtons(): void {
 
 function setListeningUi(on: boolean, pending = false): void {
   listenBtn.disabled = pending
-  listenBtn.textContent = on ? 'Stop' : 'Listen'
+  listenBtn.textContent = on ? 'Pause' : 'Play'
   listenBtn.setAttribute('aria-pressed', on ? 'true' : 'false')
   listenBtn.classList.toggle('active', on)
   syncForageEnabled()
@@ -223,14 +247,12 @@ function highlightCompass(id: BedId | null): void {
 function updateHud(hz: number | null, planted: boolean): void {
   if (hz !== null && planted) {
     const t = pitchNorm(hz, listenMode)
-    pitchFill.style.width = `${Math.round(t * 100)}%`
+    pitchFill.style.setProperty('--pitch', `${Math.round(t * 100)}%`)
     pitchFill.style.background = `hsl(${(350 + t * 42) % 360} ${28 + t * 44}% ${62}%)`
-    pitchHz.textContent = `${Math.round(hz)} Hz`
     pitchNote.textContent = noteNameFromHz(hz)
     highlightCompass(bedFromPitch(t).id)
   } else {
-    pitchFill.style.width = '0%'
-    pitchHz.textContent = '— Hz'
+    pitchFill.style.setProperty('--pitch', '0%')
     pitchNote.textContent = '—'
     highlightCompass(null)
   }
@@ -331,11 +353,11 @@ function clearGarden(): void {
   if (captured && undoSnapshot && undoSnapshot.length > 0) {
     undoBtn.hidden = false
     scheduleUndoExpiry()
-    if (!listening) setStatus('Garden cleared — Undo for a few seconds')
+    if (!listening) setHint('Garden cleared — Undo for a few seconds')
     return
   }
   if (!undoSnapshot && !listening) {
-    setStatus('Garden cleared — a courtyard at rest')
+    setHint('Garden cleared — a courtyard at rest')
   }
 }
 
@@ -344,20 +366,22 @@ function undoClear(): void {
   garden.restorePlants(undoSnapshot)
   dropUndo()
   syncCourtyardCaption()
-  if (!listening) setStatus('Garden restored')
+  if (!listening) setHint(plantHint())
 }
 
-function stopListen(status?: string): void {
+function stopListen(hint?: string): void {
   if (!listening && detector.isRunning) detector.stop()
   if (!listening) {
-    if (status) setStatus(status)
+    if (hint) setHint(hint)
+    setMood('resting')
     return
   }
   detector.stop()
   listening = false
   resetLivePitch()
   setListeningUi(false)
-  setStatus(status ?? 'Stopped — garden is resting')
+  setMood('resting')
+  setHint(hint ?? plantHint())
 }
 
 function toggleListen(): void {
@@ -373,7 +397,7 @@ async function startListen(): Promise<void> {
   if (listening) return
   try {
     setListeningUi(false, true)
-    setStatus(
+    setHint(
       listenMode === 'music'
         ? 'Share a tab or window — tick “Share audio”'
         : 'Allowing microphone…',
@@ -381,21 +405,22 @@ async function startListen(): Promise<void> {
     await detector.start({ mode: listenMode })
     listening = true
     setListeningUi(true)
-    setStatus(listeningStatus())
+    setMood('quiet')
+    setHint(plantHint())
   } catch (err) {
     listening = false
     detector.stop()
     setListeningUi(false)
+    setMood('resting')
     if (err instanceof DisplayAudioError) {
-      setStatus(err.message)
+      setHint(err.message)
       return
     }
-    setStatus('Microphone blocked — allow access to grow the garden')
+    setHint('Microphone blocked — allow access to grow the garden')
   }
 }
 
 function applyMode(next: ListenMode): void {
-  if (next === 'music' && !musicModeOffered()) return
   if (listenMode === next) return
   const wasListening = listening
   if (wasListening) stopListen()
@@ -405,22 +430,17 @@ function applyMode(next: ListenMode): void {
     void startListen()
     return
   }
-  setStatus(idleStatus())
-}
-
-function syncModeToggleVisibility(): void {
-  const offer = musicModeOffered()
-  modeToggle.hidden = !offer
-  if (!offer) applyMode('speaker')
+  setMood('resting')
+  setHint(plantHint())
 }
 
 async function mailBouquet(flowers: readonly FlowerPlant[]): Promise<void> {
   try {
     const blob = await renderBouquetPng(flowers)
     downloadBlob(blob, bouquetFilename())
-    setStatus('A bouquet is in the mail')
+    setHint('A bouquet is in the mail')
   } catch {
-    setStatus('Could not save the bouquet — try again')
+    setHint('Could not save the bouquet — try again')
   }
 }
 
@@ -436,7 +456,7 @@ function startForage(): void {
   const picks = planBouquet(garden, now)
   forageRun = new ForageRun(garden, picks, now)
   syncForageEnabled()
-  setStatus(
+  setHint(
     picks.length > 0
       ? 'The fox is foraging the fullest beds…'
       : 'The fox is sniffing the courtyard…',
@@ -451,7 +471,7 @@ function tickForage(now: number): ForageView | null {
   }
   if (ev?.type === 'done') {
     if (!ev.mailed && !listening) {
-      setStatus('Nothing to forage — the fox left empty-handed')
+      setHint('Nothing to forage — the fox left empty-handed')
     }
     forageRun = null
     syncForageEnabled()
@@ -475,7 +495,8 @@ detector.onCaptureEnded = () => {
   listening = false
   resetLivePitch()
   setListeningUi(false)
-  setStatus('Share ended — tap Listen to follow the mix again')
+  setMood('resting')
+  setHint('Share ended — tap Play to follow the mix again')
 }
 
 listenBtn.addEventListener('click', () => {
@@ -499,12 +520,12 @@ window.addEventListener('keydown', (e) => {
   if (isTypingTarget(e.target)) return
   if (e.repeat) return
   const key = e.key.toLowerCase()
-  if (key === 'l') {
+  if (key === 'p') {
     toggleListen()
     return
   }
   if (key === 'c') {
-    clearGarden()
+    if (!clearBtn.disabled) clearGarden()
     return
   }
   if (key === 'k') {
@@ -516,9 +537,10 @@ function pointerToLogical(e: PointerEvent): { x: number; y: number } | null {
   const rect = canvas.getBoundingClientRect()
   if (rect.width <= 0 || rect.height <= 0) return null
   const scale = renderer.getScale()
+  const origin = renderer.getOrigin()
   const backingX = ((e.clientX - rect.left) * canvas.width) / rect.width
   const backingY = ((e.clientY - rect.top) * canvas.height) / rect.height
-  return { x: backingX / scale, y: backingY / scale }
+  return { x: (backingX - origin.x) / scale, y: (backingY - origin.y) / scale }
 }
 
 function flowerUnder(e: PointerEvent): FlowerPlant | null {
@@ -583,8 +605,6 @@ canvas.addEventListener('pointercancel', () => {
   hideInspect()
 })
 
-syncModeToggleVisibility()
-
 modeSpeakerBtn.addEventListener('click', () => {
   applyMode('speaker')
 })
@@ -611,23 +631,11 @@ function frame(now: number): void {
         smoothedHz === null ? sample.hz : smoothedHz * 0.7 + sample.hz * 0.3
       livePitchT = pitchNorm(smoothedHz, listenMode)
       updateHud(smoothedHz, true)
-      setStatus(`Blooming · ${Math.round(smoothedHz)} Hz`)
+      setMood('Blooming')
     } else {
       livePitchT = null
       updateHud(null, false)
-      if (sample.percussive) {
-        setStatus(
-          listenMode === 'music' ? 'Beat · the bed is swaying' : listeningStatus(),
-        )
-      } else if (sample.rms < detector.silenceThreshold) {
-        setStatus(
-          listenMode === 'music'
-            ? 'Quiet in the mix · grass is filling the gaps'
-            : 'Pause · grass is filling the gaps',
-        )
-      } else {
-        setStatus(listeningStatus())
-      }
+      setMood('quiet')
     }
   }
 

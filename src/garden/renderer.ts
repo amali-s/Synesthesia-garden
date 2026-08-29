@@ -1,12 +1,19 @@
 import {
   GARDEN_BEDS,
   bedsBackToFront,
+  gridShapeForView,
+  layoutCourtyard,
+  minLogicalSize,
   type GardenBed,
 } from './beds'
 import {
   drawCarriedBloom,
   drawFox,
   drawMailbox,
+  FOX_H,
+  FOX_H_BASE,
+  placeCritters,
+  syncMailboxForView,
 } from './critters'
 import type { ForageView } from './forage'
 import { ACCENTS, GROUND, hourShadowOffsetForListenMs, hourTintForListenMs } from './palette'
@@ -20,6 +27,10 @@ export type RendererOptions = {
 
 const ONSET_RIPPLE_MS = 140
 const ONSET_PULSE_MS = 200
+/** Chrome/Edge “Sharing this tab” chrome is ~40–70px. Height-only changes
+ *  inside this slack keep scale, bed geometry, and canvas height so the
+ *  courtyard can scroll instead of clipping the front gravel. */
+const HEIGHT_LOCK_PX = 120
 
 export class GardenRenderer {
   private canvas: HTMLCanvasElement
@@ -29,11 +40,18 @@ export class GardenRenderer {
   private scale: number
   private logicalW: number
   private logicalH: number
+  /** Backing pixels of the on-screen courtyard (may be larger than 320×200 × scale). */
+  private viewW: number
+  private viewH: number
+  private originX = 0
+  private originY = 0
   private bgDirty = true
   private bgShadowDx = NaN
   private bgShadowDy = NaN
   /** Freeze decorative sway / grow / onset pulse; lifecycle still advances. */
   reducedMotion = false
+  /** True after the first real fit; share-bar height jitters must not reflow beds. */
+  private fitted = false
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -52,6 +70,8 @@ export class GardenRenderer {
     this.scale = opts.scale
     this.logicalW = logicalW
     this.logicalH = logicalH
+    this.viewW = logicalW * opts.scale
+    this.viewH = logicalH * opts.scale
     this.resize()
   }
 
@@ -59,14 +79,75 @@ export class GardenRenderer {
     return this.scale
   }
 
+  getOrigin(): { x: number; y: number } {
+    return { x: this.originX, y: this.originY }
+  }
+
+  getLogicalSize(): { width: number; height: number } {
+    return { width: this.logicalW, height: this.logicalH }
+  }
+
+  getViewSize(): { width: number; height: number } {
+    return { width: this.viewW, height: this.viewH }
+  }
+
   setScale(scale: number): void {
-    this.scale = scale
+    this.scale = Math.max(1, Math.round(scale))
+    this.viewW = this.logicalW * this.scale
+    this.viewH = this.logicalH * this.scale
+    this.originX = 0
+    this.originY = 0
+    this.fitted = false
     this.resize()
   }
 
+  /**
+   * Size the canvas to the glass. Extra pixels are gravel, not taller soil.
+   * Returns true when bed geometry changed (callers should snap plants).
+   */
+  setView(viewW: number, viewH: number): boolean {
+    const w = Math.max(1, Math.round(viewW))
+    const h = Math.max(1, Math.round(viewH))
+    if (this.fitted && Math.abs(w - this.viewW) <= 2 && Math.abs(h - this.viewH) <= HEIGHT_LOCK_PX) {
+      return false
+    }
+    const { cols, rows } = gridShapeForView(w, h)
+    syncMailboxForView(cols, rows)
+    const min = minLogicalSize(cols, rows)
+    const scale = Math.max(1, Math.floor(Math.min(w / min.w, h / min.h)))
+    const logicalW = Math.max(min.w, Math.floor(w / scale))
+    const logicalH = Math.max(min.h, Math.floor(h / scale))
+    layoutCourtyard(logicalW, logicalH, cols, rows)
+    placeCritters()
+    const originX = Math.floor((w - logicalW * scale) / 2)
+    const originY = Math.floor((h - logicalH * scale) / 2)
+    if (
+      w === this.viewW &&
+      h === this.viewH &&
+      scale === this.scale &&
+      logicalW === this.logicalW &&
+      logicalH === this.logicalH &&
+      originX === this.originX &&
+      originY === this.originY
+    ) {
+      this.fitted = true
+      return false
+    }
+    this.viewW = w
+    this.viewH = h
+    this.scale = scale
+    this.logicalW = logicalW
+    this.logicalH = logicalH
+    this.originX = originX
+    this.originY = originY
+    this.fitted = true
+    this.resize()
+    return true
+  }
+
   resize(): void {
-    this.canvas.width = this.logicalW * this.scale
-    this.canvas.height = this.logicalH * this.scale
+    this.canvas.width = this.viewW
+    this.canvas.height = this.viewH
     this.ctx.imageSmoothingEnabled = false
     this.bgDirty = true
   }
@@ -77,9 +158,12 @@ export class GardenRenderer {
     livePitchT: number | null,
     forage: ForageView | null = null,
   ): void {
-    const { ctx, scale, logicalW } = this
+    const { ctx, scale, logicalW, originX, originY } = this
     this.ensureBackground(garden.listenMs)
     ctx.drawImage(this.bgCanvas, 0, 0)
+
+    ctx.save()
+    ctx.translate(originX, originY)
 
     for (const bed of bedsBackToFront()) {
       for (const plant of garden.plantsInBed(bed.id)) {
@@ -101,6 +185,7 @@ export class GardenRenderer {
 
     drawMailbox(ctx, scale, forage?.mailboxFlag ?? false)
     if (forage) this.drawForage(forage)
+    ctx.restore()
     this.drawHourGel(garden.listenMs)
   }
 
@@ -117,10 +202,11 @@ export class GardenRenderer {
       )
     }
     const carry = forage.bundle.slice(-3)
+    const carryLift = Math.round((11 * FOX_H) / FOX_H_BASE)
     for (let i = 0; i < carry.length; i++) {
       const plant = carry[i]!
       const ox = forage.foxX - forage.facing * (2 + i * 2)
-      const oy = forage.foxY - 11 - i
+      const oy = forage.foxY - carryLift - i
       drawCarriedBloom(ctx, plant, ox, oy, scale, 8)
     }
     drawFox(
@@ -136,8 +222,8 @@ export class GardenRenderer {
 
   private ensureBackground(listenMs: number): void {
     const { dx, dy } = hourShadowOffsetForListenMs(listenMs)
-    const w = this.logicalW * this.scale
-    const h = this.logicalH * this.scale
+    const w = this.viewW
+    const h = this.viewH
     if (
       !this.bgDirty &&
       this.bgCanvas.width === w &&
@@ -151,17 +237,20 @@ export class GardenRenderer {
   }
 
   private rebuildBackground(dx: number, dy: number): void {
-    const w = this.logicalW * this.scale
-    const h = this.logicalH * this.scale
+    const w = this.viewW
+    const h = this.viewH
     if (this.bgCanvas.width !== w || this.bgCanvas.height !== h) {
       this.bgCanvas.width = w
       this.bgCanvas.height = h
     }
     this.bgCtx.imageSmoothingEnabled = false
     this.drawCourtyard(this.bgCtx)
+    this.bgCtx.save()
+    this.bgCtx.translate(this.originX, this.originY)
     for (const bed of bedsBackToFront()) {
       this.drawBed(this.bgCtx, bed, dx, dy)
     }
+    this.bgCtx.restore()
     this.bgShadowDx = dx
     this.bgShadowDy = dy
     this.bgDirty = false
@@ -235,26 +324,32 @@ export class GardenRenderer {
   }
 
   private drawCourtyard(ctx: CanvasRenderingContext2D): void {
-    const { logicalW, logicalH } = this
-    this.fillRect(ctx, 0, 0, logicalW, logicalH, GROUND.gravel)
-    for (let y = 0; y < logicalH; y++) {
-      for (let x = 0; x < logicalW; x++) {
-        if (inTimber(x, y)) continue
-        const n = (x * 11 + y * 19) % 23
-        if (n === 0) this.fillPx(ctx, x, y, GROUND.gravelDark)
-        else if (n === 7) this.fillPx(ctx, x, y, GROUND.gravelLight)
-        else if (n === 14) this.fillPx(ctx, x, y, GROUND.patina)
+    const { scale, viewW, viewH, originX, originY, logicalW, logicalH } = this
+    ctx.fillStyle = GROUND.gravel
+    ctx.fillRect(0, 0, viewW, viewH)
+    const x0 = -Math.ceil(originX / scale)
+    const y0 = -Math.ceil(originY / scale)
+    const x1 = Math.ceil((viewW - originX) / scale)
+    const y1 = Math.ceil((viewH - originY) / scale)
+    for (let y = y0; y < y1; y++) {
+      for (let x = x0; x < x1; x++) {
+        if (x >= 0 && y >= 0 && x < logicalW && y < logicalH && inTimber(x, y)) continue
+        const n = (((x * 11 + y * 19) % 23) + 23) % 23
+        if (n !== 0 && n !== 7 && n !== 14) continue
+        ctx.fillStyle =
+          n === 0 ? GROUND.gravelDark : n === 7 ? GROUND.gravelLight : GROUND.patina
+        ctx.fillRect(originX + x * scale, originY + y * scale, scale, scale)
       }
     }
   }
 
   private drawHourGel(listenMs: number): void {
-    const { ctx, scale, logicalW, logicalH } = this
+    const { ctx, viewW, viewH } = this
     const hour = hourTintForListenMs(listenMs)
     ctx.save()
     ctx.globalAlpha = hour.alpha
     ctx.fillStyle = hour.tint
-    ctx.fillRect(0, 0, logicalW * scale, logicalH * scale)
+    ctx.fillRect(0, 0, viewW, viewH)
     ctx.restore()
     ctx.imageSmoothingEnabled = false
   }

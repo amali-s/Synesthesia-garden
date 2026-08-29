@@ -1,13 +1,8 @@
 import {
   GARDEN_BEDS,
-  GRID_COLS,
   GRID_GAP,
   GRID_PAD_BOTTOM,
-  GRID_PAD_TOP,
   GRID_PAD_X,
-  GRID_ROWS,
-  PATCH_H,
-  PATCH_W,
   bedById,
   type BedId,
   type GardenBed,
@@ -129,20 +124,24 @@ function visitOrder(picks: FlowerPlant[]): FlowerPlant[] {
 }
 
 /** Feet on the bottom gravel walk (front of the courtyard). */
-export const FOX_LANE_BOTTOM =
-  GRID_PAD_TOP +
-  GRID_ROWS * PATCH_H +
-  (GRID_ROWS - 1) * GRID_GAP +
-  Math.floor(GRID_PAD_BOTTOM / 2)
+export function foxLaneBottom(): number {
+  let bottom = 0
+  for (const bed of GARDEN_BEDS) bottom = Math.max(bottom, bed.y + bed.h)
+  return bottom + Math.floor(GRID_PAD_BOTTOM / 2)
+}
 
 function alleyXs(): number[] {
-  const xs = [GRID_PAD_X / 2]
-  for (let col = 0; col < GRID_COLS - 1; col++) {
-    const gutter0 = GRID_PAD_X + (col + 1) * PATCH_W + col * GRID_GAP
-    xs.push(gutter0 + GRID_GAP / 2)
+  const colX = [...new Set(GARDEN_BEDS.map((b) => b.x))].sort((a, b) => a - b)
+  if (colX.length === 0) return [GRID_PAD_X / 2]
+  const patchW = GARDEN_BEDS[0]?.w ?? 70
+  const xs = [colX[0]! - GRID_PAD_X / 2]
+  for (let i = 0; i < colX.length - 1; i++) {
+    const right = colX[i]! + patchW
+    const left = colX[i + 1]!
+    xs.push((right + left) / 2)
   }
-  const lastBed = GARDEN_BEDS.find((b) => b.id === 'b3') ?? GARDEN_BEDS[3]!
-  xs.push(lastBed.x + lastBed.w + GRID_PAD_X / 2)
+  const last = colX[colX.length - 1]!
+  xs.push(last + patchW + GRID_PAD_X / 2)
   return xs
 }
 
@@ -183,8 +182,11 @@ export function gravelWalk(
 /** Stand on the gravel walk beside a patch — never on timber. */
 export function foxStandForBed(bed: GardenBed): { x: number; y: number } {
   const x = Math.round(bed.x + bed.w / 2)
-  const y = bed.y <= GRID_PAD_TOP ? FOX_ENTER.y : FOX_LANE_BOTTOM
-  return { x, y }
+  const topY = Math.min(...GARDEN_BEDS.map((b) => b.y))
+  const botY = Math.max(...GARDEN_BEDS.map((b) => b.y))
+  if (bed.y <= topY) return { x, y: FOX_ENTER.y }
+  if (bed.y >= botY) return { x, y: foxLaneBottom() }
+  return { x, y: bed.y + bed.h + Math.floor(GRID_GAP / 2) }
 }
 
 function buildSteps(picks: FlowerPlant[]): Step[] {

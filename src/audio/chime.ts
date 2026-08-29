@@ -1,7 +1,7 @@
 /**
  * Short bell-like tone at a bloom’s stored pitch.
  * Mixes through the shared AudioContext destination — never through
- * the pitch analyser, so Listen / Stop cannot mute it.
+ * the pitch analyser, so Play / Pause cannot mute it.
  */
 export class BloomChime {
   /** Phase 8 can flip this for prefers-reduced-motion / a mute control. */
@@ -12,7 +12,7 @@ export class BloomChime {
     this.ctx = ctx
   }
 
-  /** Resume the shared context (pointer / Listen gesture). */
+  /** Resume the shared context (pointer / Play gesture). */
   async unlock(): Promise<void> {
     if (this.ctx.state === 'suspended') await this.ctx.resume()
   }

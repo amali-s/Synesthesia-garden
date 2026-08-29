@@ -12,10 +12,10 @@ import {
 import { MAILBOX, MAILBOX_H, MAILBOX_W } from './critters'
 import {
   ForageRun,
-  FOX_LANE_BOTTOM,
   MAX_BOUQUET,
   MAX_PER_BED,
   MIN_BOUQUET,
+  foxLaneBottom,
   foxStandForBed,
   gravelWalk,
   planBouquet,
@@ -212,7 +212,7 @@ describe('gravel walks', () => {
     expect(isGravel(back.x, back.y)).toBe(true)
     expect(isGravel(front.x, front.y)).toBe(true)
     expect(back.y).toBeLessThan(GRID_PAD_TOP)
-    expect(front.y).toBe(FOX_LANE_BOTTOM)
+    expect(front.y).toBe(foxLaneBottom())
     expect(front.y).toBeGreaterThanOrEqual(GRID_PAD_TOP + PATCH_H * 2 + GRID_GAP)
   })
 

@@ -223,7 +223,7 @@ export class PitchDetector {
       if (isUserDismissedCapture(err)) {
         throw new DisplayAudioError(
           'denied',
-          'Share cancelled — play a song, then Listen and share that tab or window with audio',
+          'Share cancelled — play a song, then Play and share that tab or window with audio',
         )
       }
       throw new DisplayAudioError(

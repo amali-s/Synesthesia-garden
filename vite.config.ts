@@ -12,7 +12,7 @@ export default defineConfig(({ mode }) => {
     // Spotify and Qobuz are deferred (see ROADMAP "Later"), so their dev
     // middleware stays unregistered while the UI is hidden. The plugins live in
     // `vite-plugin-spotify-api.ts` / `vite-plugin-qobuz-api.ts` if we bring the
-    // streaming UI back. Listen needs no secrets.
+    // streaming UI back. Play needs no secrets.
     plugins: [],
   }
 })

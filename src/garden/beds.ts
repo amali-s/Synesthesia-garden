@@ -1,21 +1,33 @@
-/** Eight raised patches in a 2×4 grid (logical 320×200). */
+/** Eight raised patches. Portrait glass is 2×4; landscape is 4×2. */
 
-export const GRID_COLS = 4
-export const GRID_ROWS = 2
+export let GRID_COLS = 4
+export let GRID_ROWS = 2
 /** Left inset; hour-cast planter shadow is ≤2px. */
 export const GRID_PAD_X = 8
 /**
  * Gravel walk above the back beds. Tall enough for the mailbox to sit
- * entirely on courtyard, not on timber.
+ * entirely on courtyard, not on timber. Grows on portrait when the
+ * mailbox is drawn larger.
  */
-export const GRID_PAD_TOP = 32
+export const GRID_PAD_TOP_BASE = 32
+export let GRID_PAD_TOP = GRID_PAD_TOP_BASE
+
+export function setGridPadTop(h: number): void {
+  GRID_PAD_TOP = Math.max(GRID_PAD_TOP_BASE, Math.round(h))
+}
 /** Gravel walk below the front beds. */
 export const GRID_PAD_BOTTOM = 12
 /** Gutter between patches (shadow ≤2px, so they never kiss). */
 export const GRID_GAP = 8
-export const PATCH_W = 70
-/** Shorter so the 32px gravel walk can hold the mailbox sprite. */
-export const PATCH_H = 74
+/**
+ * Floor planter size (sprites stay at this zoom). Leftover courtyard
+ * grows the dirt so the block fills the glass; share-bar height
+ * jitters do not relayout.
+ */
+export const MIN_PATCH_W = 70
+export const MIN_PATCH_H = 74
+export let PATCH_W = MIN_PATCH_W
+export let PATCH_H = MIN_PATCH_H
 export const TIMBER = 5
 export const LIP = 4
 
@@ -80,6 +92,84 @@ export const GARDEN_BEDS: GardenBed[] = [
   makeBed('f2', 2, 1, 0.25, 0.375),
   makeBed('f3', 3, 1, 0.375, 0.5),
 ]
+
+export type GridShape = { cols: number; rows: number }
+
+/** Width of a 4×2 block including side gravel. Below this, stack 2×4. */
+export function fourWideMin(): number {
+  return GRID_PAD_X * 2 + 4 * MIN_PATCH_W + 3 * GRID_GAP
+}
+
+/** Portrait (phones) is 2×4; landscape stays 4×2 unless four-wide cannot fit. */
+export function gridShapeForView(viewW: number, viewH: number = viewW): GridShape {
+  if (viewH > viewW) return { cols: 2, rows: 4 }
+  return viewW < fourWideMin() ? { cols: 2, rows: 4 } : { cols: 4, rows: 2 }
+}
+
+export function minLogicalSize(cols: number, rows: number): { w: number; h: number } {
+  return {
+    w: GRID_PAD_X * 2 + cols * MIN_PATCH_W + (cols - 1) * GRID_GAP,
+    h: GRID_PAD_TOP + GRID_PAD_BOTTOM + rows * MIN_PATCH_H + (rows - 1) * GRID_GAP,
+  }
+}
+
+/**
+ * Grow the eight patches to fill the courtyard (mailbox walk stays).
+ * Pitch bands stay on bed ids; dirt never shrinks below MIN_PATCH_*.
+ */
+export function layoutCourtyard(
+  logicalW: number,
+  logicalH: number,
+  cols: number,
+  rows: number,
+): { padX: number; padTop: number } {
+  GRID_COLS = cols
+  GRID_ROWS = rows
+  PATCH_W = Math.max(
+    MIN_PATCH_W,
+    Math.floor((logicalW - GRID_PAD_X * 2 - (cols - 1) * GRID_GAP) / cols),
+  )
+  PATCH_H = Math.max(
+    MIN_PATCH_H,
+    Math.floor(
+      (logicalH - GRID_PAD_TOP - GRID_PAD_BOTTOM - (rows - 1) * GRID_GAP) / rows,
+    ),
+  )
+  const usedW = GRID_PAD_X * 2 + cols * PATCH_W + (cols - 1) * GRID_GAP
+  const padX = GRID_PAD_X + Math.floor((logicalW - usedW) / 2)
+  const padTop = GRID_PAD_TOP
+  const ids =
+    cols === 4
+      ? ([
+          ['b0', 'b1', 'b2', 'b3'],
+          ['f0', 'f1', 'f2', 'f3'],
+        ] as const)
+      : ([
+          ['b2', 'b3'],
+          ['b0', 'b1'],
+          ['f2', 'f3'],
+          ['f0', 'f1'],
+        ] as const)
+
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const id = ids[row]![col]!
+      const bed = GARDEN_BEDS.find((b) => b.id === id)!
+      bed.x = padX + col * (PATCH_W + GRID_GAP)
+      bed.y = padTop + row * (PATCH_H + GRID_GAP)
+      bed.w = PATCH_W
+      bed.h = PATCH_H
+    }
+  }
+  return { padX, padTop }
+}
+
+/** Compass cells back-to-front, left-to-right (matches the planted grid). */
+export function compassBedIds(): BedId[] {
+  return [...GARDEN_BEDS]
+    .sort((a, b) => a.y - b.y || a.x - b.x)
+    .map((b) => b.id)
+}
 
 export function bedFromPitch(pitchT: number): GardenBed {
   const t = Math.min(1, Math.max(0, pitchT))
