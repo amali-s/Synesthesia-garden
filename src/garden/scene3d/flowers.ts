@@ -1,9 +1,4 @@
-import {
-  BufferGeometry,
-  Color,
-  CylinderGeometry,
-  Float32BufferAttribute,
-} from 'three'
+import { BufferGeometry, Float32BufferAttribute } from 'three'
 import { PASTEL } from '../palette'
 import type { FlowerKind } from '../sprites'
 
@@ -63,37 +58,24 @@ export function createKindGeometry(kind: FlowerKind): BufferGeometry {
   return b.toGeometry(1.85)
 }
 
-/** Unit cylinder centered on Y, radius `STEM_RADIUS`, height `STEM_GEO_HEIGHT`. */
+/** Unit square prism centered on Y, half-width `STEM_RADIUS`, height `STEM_GEO_HEIGHT`. */
 export function createStemGeometry(): BufferGeometry {
-  const geo = new CylinderGeometry(STEM_RADIUS, STEM_RADIUS * 0.92, STEM_GEO_HEIGHT, 7)
-  const pos = geo.getAttribute('position')
-  const colors = new Float32Array(pos.count * 3)
-  const stem = new Color(PASTEL.stem)
-  const dark = new Color(PASTEL.stemDark)
-  const c = new Color()
-  for (let i = 0; i < pos.count; i++) {
-    const t = (pos.getY(i) + STEM_GEO_HEIGHT / 2) / STEM_GEO_HEIGHT
-    c.copy(dark).lerp(stem, t)
-    colors[i * 3] = c.r
-    colors[i * 3 + 1] = c.g
-    colors[i * 3 + 2] = c.b
-  }
-  geo.setAttribute('color', new Float32BufferAttribute(colors, 3))
-  return geo
+  const b = new MeshBuilder()
+  const w = STEM_RADIUS * 2
+  const band = STEM_GEO_HEIGHT / 2
+  b.addPrism(0, -band / 2, 0, w, band, w, hexRgb(PASTEL.stemDark))
+  b.addPrism(0, band / 2, 0, w, band, w, hexRgb(PASTEL.stem))
+  return b.toGeometry()
 }
 
 export function createGrassBladeGeometry(): BufferGeometry {
   const b = new MeshBuilder()
   const h = 0.22
-  const w = 0.016
-  const grass = hexRgb(PASTEL.grass)
-  const lite = hexRgb(PASTEL.grassLight)
-  const dark = hexRgb(PASTEL.grassDark)
-  const spine = 0.004
-  b.tri([-w, 0, spine], [w, 0, spine], [w * 0.35, h, 0], dark, grass, lite)
-  b.tri([-w, 0, spine], [w * 0.35, h, 0], [-w * 0.35, h, 0], dark, lite, lite)
-  b.tri([w, 0, -spine], [-w, 0, -spine], [-w * 0.35, h, 0], grass, dark, lite)
-  b.tri([w, 0, -spine], [-w * 0.35, h, 0], [w * 0.35, h, 0], grass, lite, lite)
+  const w = 0.05
+  const d = 0.018
+  const band = h / 2
+  b.addPrism(0, band / 2, 0, w, band, d, hexRgb(PASTEL.grassDark))
+  b.addPrism(0, band + band / 2, 0, w, band, d, hexRgb(PASTEL.grassLight))
   return b.toGeometry()
 }
 
@@ -294,13 +276,39 @@ class MeshBuilder {
     if (x1 <= x0) x1 = x0 + VOXEL
     if (y1 <= y0) y1 = y0 + VOXEL
     if (z1 <= z0) z1 = z0 + VOXEL
-    const base = ROLE_RGB[role]
-    this.face(x0, y0, z1, x1, y0, z1, x1, y1, z1, x0, y1, z1, shade(base, 1))
-    this.face(x1, y0, z0, x0, y0, z0, x0, y1, z0, x1, y1, z0, shade(base, 0.88))
-    this.face(x1, y0, z1, x1, y0, z0, x1, y1, z0, x1, y1, z1, shade(base, 1.06))
-    this.face(x0, y0, z0, x0, y0, z1, x0, y1, z1, x0, y1, z0, shade(base, 0.84))
-    this.face(x0, y1, z1, x1, y1, z1, x1, y1, z0, x0, y1, z0, shade(base, 1.18))
-    this.face(x0, y0, z0, x1, y0, z0, x1, y0, z1, x0, y0, z1, shade(base, 0.72))
+    this.addPrism(
+      (x0 + x1) / 2,
+      (y0 + y1) / 2,
+      (z0 + z1) / 2,
+      x1 - x0,
+      y1 - y0,
+      z1 - z0,
+      ROLE_RGB[role],
+    )
+  }
+
+  /** Closed box, unique verts per face. No voxel snap — stems/grass keep world size. */
+  addPrism(
+    cx: number,
+    cy: number,
+    cz: number,
+    sx: number,
+    sy: number,
+    sz: number,
+    rgb: readonly [number, number, number],
+  ): void {
+    const x0 = cx - sx / 2
+    const y0 = cy - sy / 2
+    const z0 = cz - sz / 2
+    const x1 = cx + sx / 2
+    const y1 = cy + sy / 2
+    const z1 = cz + sz / 2
+    this.face(x0, y0, z1, x1, y0, z1, x1, y1, z1, x0, y1, z1, shade(rgb, 1))
+    this.face(x1, y0, z0, x0, y0, z0, x0, y1, z0, x1, y1, z0, shade(rgb, 0.88))
+    this.face(x1, y0, z1, x1, y0, z0, x1, y1, z0, x1, y1, z1, shade(rgb, 1.06))
+    this.face(x0, y0, z0, x0, y0, z1, x0, y1, z1, x0, y1, z0, shade(rgb, 0.84))
+    this.face(x0, y1, z1, x1, y1, z1, x1, y1, z0, x0, y1, z0, shade(rgb, 1.18))
+    this.face(x0, y0, z0, x1, y0, z0, x1, y0, z1, x0, y0, z1, shade(rgb, 0.72))
   }
 
   private face(

@@ -57,8 +57,30 @@ describe('createStemGeometry', () => {
   it('is a standing cylinder with height', () => {
     const geo = createStemGeometry()
     geo.computeBoundingBox()
-    expect(geo.getAttribute('position').count).toBeGreaterThan(0)
-    expect(geo.boundingBox!.max.y - geo.boundingBox!.min.y).toBeGreaterThan(0.5)
+    const box = geo.boundingBox!
+    const pos = geo.getAttribute('position')
+    const col = geo.getAttribute('color')
+    expect(pos.count).toBeGreaterThan(0)
+    expect(box.max.y - box.min.y).toBeGreaterThan(0.5)
+    expect(box.max.x - box.min.x).toBeCloseTo(box.max.z - box.min.z)
+    let low = 0
+    let high = 0
+    let nLow = 0
+    let nHigh = 0
+    for (let i = 0; i < pos.count; i++) {
+      const y = pos.getY(i)
+      const lum = col.getX(i) + col.getY(i) + col.getZ(i)
+      if (y < -0.1) {
+        low += lum
+        nLow++
+      } else if (y > 0.1) {
+        high += lum
+        nHigh++
+      }
+    }
+    expect(nLow).toBeGreaterThan(0)
+    expect(nHigh).toBeGreaterThan(0)
+    expect(low / nLow).toBeLessThan(high / nHigh)
     geo.dispose()
   })
 })
@@ -82,8 +104,13 @@ describe('createGrassBladeGeometry', () => {
   it('has height', () => {
     const geo = createGrassBladeGeometry()
     geo.computeBoundingBox()
+    const box = geo.boundingBox!
+    const w = box.max.x - box.min.x
+    const d = box.max.z - box.min.z
     expect(geo.getAttribute('position').count).toBeGreaterThan(0)
-    expect(geo.boundingBox!.max.y - geo.boundingBox!.min.y).toBeGreaterThan(0)
+    expect(box.max.y - box.min.y).toBeGreaterThan(0)
+    expect(Math.min(w, d)).toBeGreaterThan(0)
+    expect(Math.min(w, d)).toBeLessThan(Math.max(w, d))
     geo.dispose()
   })
 })
