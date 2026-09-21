@@ -25,6 +25,13 @@ const SNIFF_MS = 1400
 const PICK_MS = 380
 const MAIL_MS = 900
 
+export type ForageLandmark =
+  | { kind: 'enter' }
+  | { kind: 'sniff' }
+  | { kind: 'pick'; plant: FlowerPlant }
+  | { kind: 'mail' }
+  | { kind: 'exit' }
+
 export type ForageView = {
   foxX: number
   foxY: number
@@ -36,6 +43,8 @@ export type ForageView = {
   liftX: number
   liftY: number
   mailboxFlag: boolean
+  /** Semantic walk for Among them. Courtyard ignores this. */
+  ring: { from: ForageLandmark; to: ForageLandmark; pickT: number }
 }
 
 export type ForageEvent =
@@ -256,6 +265,7 @@ export class ForageRun {
   }
 
   view(now: number): ForageView {
+    const { from, to } = this.landmarks()
     return {
       foxX: this.x,
       foxY: this.y,
@@ -267,6 +277,11 @@ export class ForageRun {
       liftX: this.liftX,
       liftY: this.liftY,
       mailboxFlag: this.mailed || this.current()?.kind === 'mail',
+      ring: {
+        from,
+        to,
+        pickT: this.pose === 'pick' ? Math.min(1, (now - this.dwellStart) / PICK_MS) : 0,
+      },
     }
   }
 
@@ -330,6 +345,32 @@ export class ForageRun {
     return this.steps[this.index]
   }
 
+  private landmarks(): { from: ForageLandmark; to: ForageLandmark } {
+    return { from: this.landmarkBehind(this.index), to: this.landmarkAhead(this.index) }
+  }
+
+  private landmarkAhead(index: number): ForageLandmark {
+    for (let i = index; i < this.steps.length; i++) {
+      const s = this.steps[i]!
+      if (s.kind === 'walk') continue
+      if (s.kind === 'pick') return { kind: 'pick', plant: s.plant }
+      if (s.kind === 'sniff') return { kind: 'sniff' }
+      if (s.kind === 'mail') return { kind: 'mail' }
+    }
+    return this.sniffing ? { kind: 'enter' } : { kind: 'exit' }
+  }
+
+  private landmarkBehind(index: number): ForageLandmark {
+    for (let i = index - 1; i >= 0; i--) {
+      const s = this.steps[i]!
+      if (s.kind === 'walk') continue
+      if (s.kind === 'pick') return { kind: 'pick', plant: s.plant }
+      if (s.kind === 'sniff') return { kind: 'sniff' }
+      if (s.kind === 'mail') return { kind: 'mail' }
+    }
+    return { kind: 'enter' }
+  }
+
   private finish(): ForageEvent {
     this.finished = true
     return { type: 'done', mailed: this.mailEmitted }
@@ -339,7 +380,12 @@ export class ForageRun {
     this.index += 1
     this.dwellStart = now
     this.plucked = false
-    if (!this.current()) return this.finish()
+    const next = this.current()
+    if (!next) return this.finish()
+    if (next.kind === 'walk') {
+      this.pose = 'walk'
+      this.lifting = null
+    }
     return null
   }
 

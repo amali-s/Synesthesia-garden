@@ -18,7 +18,7 @@ import {
 import type { ForageView } from './forage'
 import { ACCENTS, GROUND, hourShadowOffsetForListenMs, hourTintForListenMs } from './palette'
 import { drawFlower, drawGrass } from './sprites'
-import { plantLife, type Garden, type Plant } from './world'
+import { flowerGlow, plantLife, type Garden, type Plant } from './world'
 
 export type RendererOptions = {
   /** Screen pixels per logical pixel */
@@ -279,6 +279,9 @@ export class GardenRenderer {
       )
       return
     }
+    const glow = flowerGlow(plant, now)
+    const singing = glow.singing
+    const pulse = reduce ? 0 : glow.pulse
     drawFlower(
       ctx,
       plant.x,
@@ -296,6 +299,8 @@ export class GardenRenderer {
       plant.baseHue,
       plant.hz,
       reduce,
+      singing,
+      pulse,
     )
   }
 

@@ -1,4 +1,4 @@
-import { drawBloomArt } from './bloomArt'
+import { bloomPixelSize, drawBloomArt } from './bloomArt'
 import { PASTEL } from './palette'
 
 export type FlowerKind = 'daisy' | 'tulip' | 'bell' | 'rose' | 'star' | 'poppy' | 'orchid'
@@ -97,8 +97,13 @@ export function drawFlower(
   _baseHue?: number,
   hz?: number,
   reducedMotion = false,
+  glowT = 0,
+  pulseT = 0,
 ): void {
   const grow = reducedMotion ? 1 : Math.min(1, age / 0.8)
+  const flash = Math.min(1.5, onsetPulse + glowT * 0.28 + pulseT * 0.9)
+  const destH = bloomPixelSize(kind, loudnessT, grow, restT, wiltT, flash).h
+  drawBloomHalo(ctx, gx, gy, scale, destH, _baseHue ?? 40, glowT, pulseT)
   drawBloomArt(
     ctx,
     gx,
@@ -110,9 +115,36 @@ export function drawFlower(
     timbreT,
     loudnessT,
     sway,
-    onsetPulse,
+    flash,
     grow,
     restT,
     wiltT,
   )
+}
+
+function drawBloomHalo(
+  ctx: CanvasRenderingContext2D,
+  gx: number,
+  gy: number,
+  scale: number,
+  destH: number,
+  hue: number,
+  glowT: number,
+  pulseT: number,
+): void {
+  if (glowT <= 0 && pulseT <= 0) return
+  const cx = gx
+  const cy = gy - destH * 0.62
+  const r = 3 + Math.round(pulseT * 2)
+  const color = `hsl(${hue} 58% ${74 + pulseT * 14}%)`
+  ctx.save()
+  ctx.globalAlpha = 0.22 * glowT + 0.48 * pulseT
+  for (let dy = -r; dy <= r; dy++) {
+    for (let dx = -r; dx <= r; dx++) {
+      if (dx * dx + dy * dy > r * r) continue
+      if (dx === 0 && dy === 0) continue
+      px(ctx, cx + dx, cy + dy, color, scale)
+    }
+  }
+  ctx.restore()
 }

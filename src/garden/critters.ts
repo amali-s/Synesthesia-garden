@@ -111,6 +111,15 @@ export function bouquetWrapImage(): HTMLImageElement | null {
   return sheets.get('bouquet') ?? null
 }
 
+export function foxImage(pose: FoxPose, frame: 0 | 1): HTMLImageElement | null {
+  if (pose === 'walk') return sheets.get(frame === 0 ? 'fox0' : 'fox1') ?? null
+  return sheets.get('foxStill') ?? sheets.get('fox0') ?? null
+}
+
+export function mailboxImage(flagUp: boolean): HTMLImageElement | null {
+  return sheets.get(flagUp ? 'mailOutgoing' : 'mailEmpty') ?? null
+}
+
 function blit(
   ctx: CanvasRenderingContext2D,
   img: HTMLImageElement,

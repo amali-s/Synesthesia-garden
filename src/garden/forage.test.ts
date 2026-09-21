@@ -40,6 +40,8 @@ function flower(bedId: BedId, i: number, extra: Partial<FlowerPlant> = {}): Flow
     born: 1000,
     baseHue: 20,
     wiltStarted: null,
+    singingUntil: 0,
+    glowPulseUntil: 0,
     ...extra,
   }
 }

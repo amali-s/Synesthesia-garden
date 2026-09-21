@@ -4,11 +4,14 @@ import {
   GRASS_COUNT,
   GRASS_DISC_RADIUS,
   GRASS_SEAT_CLEAR,
+  STEM_RADIUS,
   VOXEL,
   createGrassBladeGeometry,
   createKindGeometry,
+  createLeafGeometry,
   createStemGeometry,
   grassBladePose,
+  kindHasFoliage,
 } from './flowers'
 
 describe('createKindGeometry', () => {
@@ -34,6 +37,12 @@ describe('createKindGeometry', () => {
     expect(daisy.h).toBeLessThan(tulip.h)
     expect(bell.minY).toBeLessThan(0)
     expect(star.w).toBeGreaterThan(star.h * 0.8)
+
+    const keys = FLOWER_KINDS.map((kind) => {
+      const b = bounds(kind)
+      return `${b.w.toFixed(4)}|${b.h.toFixed(4)}|${b.minY.toFixed(4)}`
+    })
+    expect(new Set(keys).size).toBe(FLOWER_KINDS.length)
   })
 
   it('snaps bloom vertices to the voxel grid', () => {
@@ -51,18 +60,32 @@ describe('createKindGeometry', () => {
       geo.dispose()
     }
   })
+
+  it('puts yellow pollen on open centers only', () => {
+    expect(hasPollen('daisy')).toBe(true)
+    expect(hasPollen('star')).toBe(true)
+    expect(hasPollen('poppy')).toBe(true)
+    expect(hasPollen('orchid')).toBe(true)
+    expect(hasPollen('tulip')).toBe(false)
+    expect(hasPollen('rose')).toBe(false)
+    expect(hasPollen('bell')).toBe(false)
+  })
 })
 
 describe('createStemGeometry', () => {
-  it('is a standing cylinder with height', () => {
+  it('is a standing column with height', () => {
     const geo = createStemGeometry()
     geo.computeBoundingBox()
     const box = geo.boundingBox!
     const pos = geo.getAttribute('position')
     const col = geo.getAttribute('color')
+    const h = box.max.y - box.min.y
+    const w = box.max.x - box.min.x
+    const d = box.max.z - box.min.z
     expect(pos.count).toBeGreaterThan(0)
-    expect(box.max.y - box.min.y).toBeGreaterThan(0.5)
-    expect(box.max.x - box.min.x).toBeCloseTo(box.max.z - box.min.z)
+    expect(h).toBeGreaterThan(0.5)
+    expect(w).toBeCloseTo(d)
+    expect(h).toBeGreaterThan(w)
     let low = 0
     let high = 0
     let nLow = 0
@@ -115,6 +138,27 @@ describe('createGrassBladeGeometry', () => {
   })
 })
 
+describe('createLeafGeometry', () => {
+  it('skips bell and hangs foliage below the stem tip', () => {
+    expect(kindHasFoliage('bell')).toBe(false)
+    expect(kindHasFoliage('rose')).toBe(true)
+    expect(kindHasFoliage('tulip')).toBe(true)
+    const rose = createLeafGeometry('rose')
+    rose.computeBoundingBox()
+    const roseBox = rose.boundingBox!
+    expect(roseBox.max.x - roseBox.min.x).toBeGreaterThan(STEM_RADIUS * 4)
+    expect(roseBox.min.y).toBeLessThan(-0.05)
+    rose.dispose()
+    const tulip = createLeafGeometry('tulip')
+    const daisy = createLeafGeometry('daisy')
+    tulip.computeBoundingBox()
+    daisy.computeBoundingBox()
+    expect(tulip.boundingBox!.min.y).toBeLessThan(daisy.boundingBox!.min.y)
+    tulip.dispose()
+    daisy.dispose()
+  })
+})
+
 function bounds(kind: (typeof FLOWER_KINDS)[number]): { h: number; w: number; minY: number } {
   const geo = createKindGeometry(kind)
   geo.computeBoundingBox()
@@ -124,4 +168,21 @@ function bounds(kind: (typeof FLOWER_KINDS)[number]): { h: number; w: number; mi
   const minY = box.min.y
   geo.dispose()
   return { h, w, minY }
+}
+
+function hasPollen(kind: (typeof FLOWER_KINDS)[number]): boolean {
+  const geo = createKindGeometry(kind)
+  const col = geo.getAttribute('color')
+  let found = false
+  for (let i = 0; i < col.count; i++) {
+    const r = col.getX(i)
+    const g = col.getY(i)
+    const b = col.getZ(i)
+    if (g > 0.35 && g > b * 1.8 && r > g * 0.7) {
+      found = true
+      break
+    }
+  }
+  geo.dispose()
+  return found
 }

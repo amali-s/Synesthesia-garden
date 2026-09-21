@@ -13,18 +13,42 @@ import { loadBloomArt, tintedBloomCanvas } from './garden/bloomArt'
 import { loadCritterArt } from './garden/critters'
 import { Garden, plantLife, type FlowerPlant, type Plant } from './garden/world'
 import { GardenRenderer } from './garden/renderer'
+import { GardenScene } from './garden/scene3d/GardenScene'
 import { bouquetFilename, renderBouquetPng } from './garden/bouquet'
 import { ForageRun, planBouquet, type ForageView } from './garden/forage'
 import { downloadBlob } from './garden/postcard'
+
+type GardenView = 'courtyard' | 'among'
+
+const COURTYARD_CAPTION = 'A courtyard at rest'
+const AMONG_CAPTION = 'A garden around you'
+const COURTYARD_LEGEND =
+  'Low front-left → high back-right. Timbre + chroma pick kind, not register.'
+const AMONG_LEGEND = 'You in the center. Low at left → high at right → around behind.'
+const WEBGL_HINT = 'This browser can’t show Among them — staying in the courtyard.'
+const RING_BEDS: BedId[] = ['f0', 'f1', 'f2', 'f3', 'b0', 'b1', 'b2', 'b3']
 
 const LOGICAL_W = 320
 const LOGICAL_H = 200
 const UNDO_MS = 7000
 const TOUCH_INSPECT_MS = 2800
+const AMONG_LOOK_HINT =
+  'Drag to look around — the garden wraps behind you. Hover a bloom to hear it.'
+const AMONG_HOVER_HINT = 'Hover or tap a bloom to hear it.'
+const COURTYARD_HOVER_HINT = 'Hover to hear the flower.'
+const AMONG_HINT_KEY = 'sg-among-look-hint'
 const COMPASS_BEDS: BedId[] = compassBedIds()
 
 function compassHtml(): string {
   return `<div class="bed-compass" role="img" aria-label="Pitch beds, none highlighted">${COMPASS_BEDS.map((id) => `<span class="bed-cell" data-bed="${id}"></span>`).join('')}</div>`
+}
+
+function ringCompassHtml(): string {
+  const cells = RING_BEDS.map((id, i) => {
+    const deg = -180 + i * 45
+    return `<span class="ring-cell" data-bed="${id}" style="--ring-a:${deg}"></span>`
+  }).join('')
+  return `<div class="ring-compass" role="img" aria-label="Pitch ring, you in the center">${cells}<span class="ring-compass__you">you</span></div>`
 }
 
 const app = document.querySelector<HTMLDivElement>('#app')!
@@ -40,9 +64,15 @@ app.innerHTML = `
           <p class="listen-hint" id="listen-hint">Click play then speak into the microphone</p>
         </div>
       </div>
-      <div class="mode-toggle" role="group" aria-label="Play source">
-        <button type="button" class="mode-btn" id="mode-speaker" aria-pressed="true">Speaker</button>
-        <button type="button" class="mode-btn" id="mode-music" aria-pressed="false">Music</button>
+      <div class="top-bar__toggles">
+        <div class="mode-toggle" role="group" aria-label="Play source">
+          <button type="button" class="mode-btn" id="mode-speaker" aria-pressed="true">Speaker</button>
+          <button type="button" class="mode-btn" id="mode-music" aria-pressed="false">Music</button>
+        </div>
+        <div class="mode-toggle view-toggle" role="group" aria-label="Garden view">
+          <button type="button" class="mode-btn" id="view-courtyard" aria-pressed="true">Courtyard</button>
+          <button type="button" class="mode-btn" id="view-among" aria-pressed="false" aria-keyshortcuts="V">Among them</button>
+        </div>
       </div>
       <div class="top-bar__meter">
         <div class="meter pitch-meter" title="Pitch">
@@ -62,6 +92,7 @@ app.innerHTML = `
         <div class="window-frame__glass">
           <div class="garden-stage">
             <canvas id="garden" aria-label="Pixel art garden grown from your voice or music"></canvas>
+            <canvas id="garden-3d" aria-label="Garden around you" hidden></canvas>
             <p class="courtyard-caption" id="courtyard-caption">A courtyard at rest</p>
           </div>
         </div>
@@ -75,10 +106,11 @@ app.innerHTML = `
           </div>
           <div class="map-modal__key">
             ${compassHtml()}
+            ${ringCompassHtml()}
             <div class="map-modal__copy">
               <p class="map-modal__mode" id="map-mode-hint">Click play then speak into the microphone</p>
               <p class="map-modal__hint">Hover to hear the flower.</p>
-              <p class="map-modal__legend">Low front-left → high back-right. Timbre + chroma pick kind, not register.</p>
+              <p class="map-modal__legend" id="map-legend">Low front-left → high back-right. Timbre + chroma pick kind, not register.</p>
             </div>
           </div>
         </aside>
@@ -89,18 +121,25 @@ app.innerHTML = `
 `
 
 const canvas = document.querySelector<HTMLCanvasElement>('#garden')!
+const canvas3d = document.querySelector<HTMLCanvasElement>('#garden-3d')!
 const listenBtn = document.querySelector<HTMLButtonElement>('#listen-btn')!
 const forageBtn = document.querySelector<HTMLButtonElement>('#forage-btn')!
 const clearBtn = document.querySelector<HTMLButtonElement>('#clear-btn')!
 const undoBtn = document.querySelector<HTMLButtonElement>('#undo-btn')!
 const modeSpeakerBtn = document.querySelector<HTMLButtonElement>('#mode-speaker')!
 const modeMusicBtn = document.querySelector<HTMLButtonElement>('#mode-music')!
+const viewCourtyardBtn = document.querySelector<HTMLButtonElement>('#view-courtyard')!
+const viewAmongBtn = document.querySelector<HTMLButtonElement>('#view-among')!
 const pitchFill = document.querySelector<HTMLDivElement>('#pitch-fill')!
 const pitchNote = document.querySelector<HTMLSpanElement>('#pitch-note')!
-const compassCells = [...document.querySelectorAll<HTMLSpanElement>('.bed-cell')]
+const compassCells = [...document.querySelectorAll<HTMLSpanElement>('.bed-cell, .ring-cell')]
+const bedCompass = document.querySelector<HTMLElement>('.map-modal .bed-compass')!
+const ringCompass = document.querySelector<HTMLElement>('.ring-compass')!
 const statusEl = document.querySelector<HTMLDivElement>('#status')!
 const listenHint = document.querySelector<HTMLParagraphElement>('#listen-hint')!
 const mapModeHint = document.querySelector<HTMLParagraphElement>('#map-mode-hint')!
+const mapHoverHint = document.querySelector<HTMLParagraphElement>('.map-modal__hint')!
+const mapLegend = document.querySelector<HTMLParagraphElement>('#map-legend')!
 const glass = document.querySelector<HTMLDivElement>('.window-frame__glass')!
 const gardenStage = document.querySelector<HTMLDivElement>('.garden-stage')!
 const courtyardCaption = document.querySelector<HTMLParagraphElement>('#courtyard-caption')!
@@ -129,6 +168,7 @@ let inspectTimer = 0
 let undoSnapshot: Plant[] | null = null
 let undoTimer = 0
 let forageRun: ForageRun | null = null
+let gardenView: GardenView = 'courtyard'
 
 const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
 
@@ -142,6 +182,7 @@ function glassBox(): { maxW: number; maxH: number } {
 type GardenMood = 'resting' | 'Blooming' | 'quiet'
 
 const renderer = new GardenRenderer(canvas, LOGICAL_W, LOGICAL_H, { scale: 1 })
+const scene3d = GardenScene.tryCreate(canvas3d)
 void loadBloomArt()
 void loadCritterArt()
 
@@ -149,6 +190,7 @@ function applyReducedMotion(): void {
   const reduce = motionQuery.matches
   chime.muted = reduce
   renderer.reducedMotion = reduce
+  if (scene3d) scene3d.reducedMotion = reduce
   document.documentElement.classList.toggle('reduce-motion', reduce)
 }
 
@@ -169,6 +211,14 @@ function fitCanvas(): void {
   canvas.style.width = '100%'
   canvas.style.height = `${view.height}px`
   gardenStage.style.minHeight = `${view.height}px`
+  fitScene3d()
+}
+
+function fitScene3d(): void {
+  if (!scene3d) return
+  const w = gardenStage.clientWidth || glassBox().maxW
+  const h = gardenStage.clientHeight || renderer.getViewSize().height
+  scene3d.resize(w, h)
 }
 
 function syncCompassLayout(): void {
@@ -190,11 +240,71 @@ function syncCompassLayout(): void {
 function syncCourtyardCaption(): void {
   const empty = garden.plants.length === 0
   courtyardCaption.hidden = !empty
+  courtyardCaption.textContent = gardenView === 'among' ? AMONG_CAPTION : COURTYARD_CAPTION
   clearBtn.disabled = empty
+}
+
+function webglAvailable(): boolean {
+  return scene3d !== null
+}
+
+function syncViewButtons(): void {
+  const among = gardenView === 'among'
+  const gl = webglAvailable()
+  viewCourtyardBtn.setAttribute('aria-pressed', among ? 'false' : 'true')
+  viewAmongBtn.setAttribute('aria-pressed', among ? 'true' : 'false')
+  viewAmongBtn.disabled = !gl
+  viewAmongBtn.title = gl ? '' : WEBGL_HINT
+}
+
+function syncViewChrome(): void {
+  const among = gardenView === 'among'
+  gardenStage.classList.toggle('is-among', among)
+  mapModal.classList.toggle('is-among', among)
+  canvas3d.hidden = !among
+  canvas3d.setAttribute('aria-hidden', among ? 'false' : 'true')
+  bedCompass.hidden = among
+  ringCompass.hidden = !among
+  mapLegend.textContent = among ? AMONG_LEGEND : COURTYARD_LEGEND
+  mapHoverHint.textContent = among ? AMONG_HOVER_HINT : COURTYARD_HOVER_HINT
+}
+
+function applyView(next: GardenView): void {
+  if (next === 'among' && !webglAvailable()) {
+    gardenView = 'courtyard'
+    syncViewButtons()
+    syncViewChrome()
+    setHint(WEBGL_HINT)
+    return
+  }
+  if (gardenView === next) return
+  gardenView = next
+  hoverFlower = null
+  canvas.classList.remove('is-over-bloom')
+  canvas3d.classList.remove('is-over-bloom')
+  hideInspect()
+  syncViewButtons()
+  syncViewChrome()
+  syncCourtyardCaption()
+  if (next === 'among') showAmongFirstHint()
+  fitScene3d()
+  if (next === 'among' && scene3d) {
+    const now = lastFrameNow || performance.now()
+    scene3d.render(garden, now, forageRun && !forageRun.done ? forageRun.view(now) : null)
+  }
+}
+
+function toggleView(): void {
+  applyView(gardenView === 'among' ? 'courtyard' : 'among')
 }
 
 fitCanvas()
 syncCourtyardCaption()
+syncViewButtons()
+syncViewChrome()
+if (!webglAvailable()) {
+  setHint(WEBGL_HINT)
+}
 
 function setMood(mood: GardenMood): void {
   if (statusEl.textContent === mood) return
@@ -204,6 +314,40 @@ function setMood(mood: GardenMood): void {
 function setHint(text: string): void {
   if (listenHint.textContent !== text) listenHint.textContent = text
   if (mapModeHint.textContent !== text) mapModeHint.textContent = text
+}
+
+function hintIsProtected(): boolean {
+  const t = listenHint.textContent ?? ''
+  if (!t) return false
+  if (t === plantHint() || t === AMONG_LOOK_HINT) return false
+  return true
+}
+
+function amongHintSeen(): boolean {
+  try {
+    return sessionStorage.getItem(AMONG_HINT_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function markAmongHintSeen(): void {
+  try {
+    sessionStorage.setItem(AMONG_HINT_KEY, '1')
+  } catch {
+    /* private mode */
+  }
+}
+
+function showAmongFirstHint(): void {
+  if (amongHintSeen() || hintIsProtected()) return
+  setHint(AMONG_LOOK_HINT)
+  markAmongHintSeen()
+}
+
+function dismissAmongHint(): void {
+  markAmongHintSeen()
+  if (listenHint.textContent === AMONG_LOOK_HINT) setHint(plantHint())
 }
 
 function plantHint(): string {
@@ -238,10 +382,12 @@ function highlightCompass(id: BedId | null): void {
   for (const cell of compassCells) {
     cell.classList.toggle('is-on', id !== null && cell.dataset.bed === id)
   }
-  const label = id ? `Pitch bed ${id}` : 'Pitch beds, none highlighted'
+  const bedLabel = id ? `Pitch bed ${id}` : 'Pitch beds, none highlighted'
+  const ringLabel = id ? `Pitch ring, ${id}` : 'Pitch ring, you in the center'
   for (const compass of document.querySelectorAll('.bed-compass')) {
-    compass.setAttribute('aria-label', label)
+    compass.setAttribute('aria-label', bedLabel)
   }
+  ringCompass.setAttribute('aria-label', ringLabel)
 }
 
 function updateHud(hz: number | null, planted: boolean): void {
@@ -349,6 +495,7 @@ function clearGarden(): void {
   hoverFlower = null
   hideInspect()
   canvas.classList.remove('is-over-bloom')
+  canvas3d.classList.remove('is-over-bloom')
   syncCourtyardCaption()
   if (captured && undoSnapshot && undoSnapshot.length > 0) {
     undoBtn.hidden = false
@@ -357,7 +504,11 @@ function clearGarden(): void {
     return
   }
   if (!undoSnapshot && !listening) {
-    setHint('Garden cleared — a courtyard at rest')
+    setHint(
+      gardenView === 'among'
+        ? 'Garden cleared — a garden around you'
+        : 'Garden cleared — a courtyard at rest',
+    )
   }
 }
 
@@ -530,6 +681,10 @@ window.addEventListener('keydown', (e) => {
   }
   if (key === 'k') {
     startForage()
+    return
+  }
+  if (key === 'v') {
+    toggleView()
   }
 })
 
@@ -549,6 +704,11 @@ function flowerUnder(e: PointerEvent): FlowerPlant | null {
   return garden.hitFlowerAt(pt.x, pt.y, lastFrameNow || performance.now())
 }
 
+function amongFlowerUnder(e: PointerEvent): FlowerPlant | null {
+  if (!scene3d) return null
+  return scene3d.hitFlower(e.clientX, e.clientY)
+}
+
 function hoverPointer(e: PointerEvent): boolean {
   if (e.pointerType === 'touch') return false
   if (e.pointerType === 'mouse' && performance.now() < suppressMouseHoverUntil) {
@@ -558,14 +718,22 @@ function hoverPointer(e: PointerEvent): boolean {
 }
 
 function setBloomCursor(on: boolean): void {
-  canvas.classList.toggle('is-over-bloom', on)
+  canvas.classList.toggle('is-over-bloom', gardenView === 'courtyard' && on)
+  canvas3d.classList.toggle('is-over-bloom', gardenView === 'among' && on)
 }
 
 function chimeFlower(plant: FlowerPlant): void {
   chime.play(plant.hz, plant.timbreT, plant.loudnessT)
 }
 
+function clearAmongHover(hideCard: boolean): void {
+  hoverFlower = null
+  setBloomCursor(false)
+  if (hideCard && !inspectTimer) hideInspect()
+}
+
 canvas.addEventListener('pointerdown', (e) => {
+  if (gardenView !== 'courtyard') return
   void chime.unlock()
   if (e.pointerType === 'touch') suppressMouseHoverUntil = performance.now() + 800
   const flower = flowerUnder(e)
@@ -580,6 +748,7 @@ canvas.addEventListener('pointerdown', (e) => {
 })
 
 canvas.addEventListener('pointermove', (e) => {
+  if (gardenView !== 'courtyard') return
   void chime.unlock()
   const flower = flowerUnder(e)
   setBloomCursor(flower !== null)
@@ -594,15 +763,73 @@ canvas.addEventListener('pointermove', (e) => {
 })
 
 canvas.addEventListener('pointerleave', (e) => {
+  if (gardenView !== 'courtyard') return
   hoverFlower = null
   setBloomCursor(false)
   if (e.pointerType !== 'touch') hideInspect()
 })
 
 canvas.addEventListener('pointercancel', () => {
+  if (gardenView !== 'courtyard') return
   hoverFlower = null
   setBloomCursor(false)
   hideInspect()
+})
+
+canvas3d.addEventListener('pointerdown', (e) => {
+  if (gardenView !== 'among') return
+  void chime.unlock()
+  if (e.pointerType === 'touch') suppressMouseHoverUntil = performance.now() + 800
+})
+
+canvas3d.addEventListener('pointermove', (e) => {
+  if (gardenView !== 'among') return
+  void chime.unlock()
+  if (scene3d?.isDragging) {
+    setBloomCursor(false)
+    return
+  }
+  const flower = amongFlowerUnder(e)
+  setBloomCursor(flower !== null)
+  if (!hoverPointer(e)) {
+    if (!flower) hoverFlower = null
+    return
+  }
+  inspectFromPointer(flower, e.pointerType)
+  if (flower === hoverFlower) return
+  hoverFlower = flower
+  if (flower) {
+    chimeFlower(flower)
+    dismissAmongHint()
+  }
+})
+
+canvas3d.addEventListener('pointerup', (e) => {
+  if (gardenView !== 'among') return
+  if (scene3d?.didLookDrag) {
+    dismissAmongHint()
+    return
+  }
+  const flower = amongFlowerUnder(e)
+  setBloomCursor(flower !== null)
+  inspectFromPointer(flower, e.pointerType)
+  if (!flower) {
+    hoverFlower = null
+    return
+  }
+  hoverFlower = flower
+  chimeFlower(flower)
+  dismissAmongHint()
+})
+
+canvas3d.addEventListener('pointerleave', (e) => {
+  if (gardenView !== 'among') return
+  clearAmongHover(e.pointerType !== 'touch')
+})
+
+canvas3d.addEventListener('pointercancel', () => {
+  if (gardenView !== 'among') return
+  clearAmongHover(true)
 })
 
 modeSpeakerBtn.addEventListener('click', () => {
@@ -611,6 +838,14 @@ modeSpeakerBtn.addEventListener('click', () => {
 
 modeMusicBtn.addEventListener('click', () => {
   applyMode('music')
+})
+
+viewCourtyardBtn.addEventListener('click', () => {
+  applyView('courtyard')
+})
+
+viewAmongBtn.addEventListener('click', () => {
+  applyView('among')
 })
 
 window.addEventListener('resize', fitCanvas)
@@ -647,12 +882,16 @@ function frame(now: number): void {
 
   syncCourtyardCaption()
   const forageView = tickForage(now)
-  renderer.draw(garden, now, livePitchT, forageView)
+  if (gardenView === 'among' && scene3d) {
+    scene3d.render(garden, now, forageView)
+  } else {
+    renderer.draw(garden, now, livePitchT, forageView)
+  }
   requestAnimationFrame(frame)
 }
 
 requestAnimationFrame(frame)
 
 if (import.meta.env.DEV) {
-  Object.assign(window, { __sg: { garden, chime, renderer } })
+  Object.assign(window, { __sg: { garden, chime, renderer, scene3d } })
 }

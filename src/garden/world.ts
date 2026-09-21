@@ -1,4 +1,4 @@
-import { pitchClassT, type PitchSample } from '../audio/pitch'
+import { noteNameFromHz, pitchClassT, type PitchSample } from '../audio/pitch'
 import {
   GARDEN_BEDS,
   bedById,
@@ -31,6 +31,10 @@ export type Plant =
       born: number
       baseHue: number
       wiltStarted: number | null
+      /** Live-voice glow expires at this time; 0 when quiet. */
+      singingUntil: number
+      /** Brighter onset flash expires at this time; 0 when idle. */
+      glowPulseUntil: number
     }
   | {
       type: 'grass'
@@ -55,6 +59,12 @@ const PAUSE_GRASS_MS = 360
 const MAX_LIVING = 560
 const CELL_W = 12
 const CELL_H = 14
+/** Same written note within this window is one living flower (YIN jitter). */
+export const PITCH_MATCH_CENTS = 50
+/** Glow holds across a few frames while the matched pitch is the live voice. */
+export const SINGING_HOLD_MS = 160
+/** Brighter flash when the same match returns as a new onset. */
+export const GLOW_PULSE_MS = 220
 
 export const SEED_MS = 800
 export const BLOOM_MS = 12_000
@@ -206,6 +216,11 @@ export class Garden {
     if (sample.isVoice && sample.hz !== null) {
       this.lastVoice = now
       this.pauseAccum = 0
+      const match = findLivingPitchMatch(this.plants, sample.hz)
+      if (match) {
+        singFlower(match, sample, now)
+        return
+      }
       const cooldown = spawnCooldownMs(sample.spawnScale)
       if (now - this.lastSpawn >= cooldown) {
         this.spawnFlower(sample, now)
@@ -396,6 +411,8 @@ export class Garden {
       born: now,
       baseHue: hueFromPitchClass(pcT),
       wiltStarted: null,
+      singingUntil: 0,
+      glowPulseUntil: 0,
     })
     this.startWilts(now)
   }
@@ -445,6 +462,55 @@ export class Garden {
     }
     list.splice(lo, 0, plant)
   }
+}
+
+/** Absolute cents between two frequencies. */
+export function centsBetweenHz(a: number, b: number): number {
+  if (!(a > 0) || !(b > 0)) return Infinity
+  return Math.abs(1200 * Math.log2(a / b))
+}
+
+/**
+ * Living flower of the same written note within ~50 cents, or null.
+ * Closest in cents wins when several match.
+ */
+export function findLivingPitchMatch(
+  plants: readonly Plant[],
+  hz: number,
+): FlowerPlant | null {
+  if (!(hz > 0)) return null
+  const note = noteNameFromHz(hz)
+  let best: FlowerPlant | null = null
+  let bestCents = Infinity
+  for (const p of plants) {
+    if (p.type !== 'flower' || p.wiltStarted !== null) continue
+    if (noteNameFromHz(p.hz) !== note) continue
+    const cents = centsBetweenHz(hz, p.hz)
+    if (cents > PITCH_MATCH_CENTS) continue
+    if (cents < bestCents) {
+      bestCents = cents
+      best = p
+    }
+  }
+  return best
+}
+
+/** 0–1 singing halo and onset flash for 2D / later 3D renderers. */
+export function flowerGlow(
+  plant: FlowerPlant,
+  now: number,
+): { singing: number; pulse: number } {
+  const singing = now < plant.singingUntil ? 1 : 0
+  const pulse =
+    plant.glowPulseUntil > now
+      ? clamp((plant.glowPulseUntil - now) / GLOW_PULSE_MS, 0, 1)
+      : 0
+  return { singing, pulse }
+}
+
+function singFlower(plant: FlowerPlant, sample: PitchSample, now: number): void {
+  plant.singingUntil = now + SINGING_HOLD_MS
+  if (sample.onset) plant.glowPulseUntil = now + GLOW_PULSE_MS
 }
 
 function emptyBedPlants(): Record<BedId, Plant[]> {
