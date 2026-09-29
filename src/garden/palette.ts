@@ -261,6 +261,22 @@ export function hueFromPitchClass(pcT: number): number {
   return colorFromBloom(pcT, 0.45, 0.5).h
 }
 
+/**
+ * Light a resonating bloom emits, one pair per pitch class.
+ * Body is that class's hue, bright enough to add; core is near-white in the same hue.
+ * Daytime petals stay on `bloomPaintRgb` — this pair is not a petal tint.
+ */
+export function emissiveGlowPair(pitchClass: number): { body: Rgb; core: Rgb } {
+  const pc = ((Math.round(pitchClass) % 12) + 12) % 12
+  const mid = colorFromBloom(pc / 12, 0.55, 0.5)
+  const body = hslToRgb({
+    h: mid.h,
+    s: Math.min(74, Math.max(58, mid.s)),
+    l: 54,
+  })
+  return { body, core: mixRgb(body, [255, 255, 255], 0.82) }
+}
+
 export function bloomDeep(mid: Hsl, pitchT: number, timbreT: number): string {
   const j = jewelMix(pitchT, timbreT)
   const shade = isWarmHue(mid.h)

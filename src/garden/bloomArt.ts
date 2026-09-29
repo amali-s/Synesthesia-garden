@@ -61,6 +61,21 @@ async function loadKind(kind: FlowerKind): Promise<void> {
   sheets.set(kind, { w, h, data })
 }
 
+/** Petal pixels of the loaded sheet, stem and leaves left out. Null until the PNG is in. */
+export function bloomHeadMask(
+  kind: FlowerKind,
+): { w: number; h: number; mask: Uint8Array } | null {
+  const sheet = sheets.get(kind)
+  if (!sheet) return null
+  const mask = new Uint8Array(sheet.w * sheet.h)
+  const src = sheet.data
+  for (let p = 0, i = 0; p < mask.length; p++, i += 4) {
+    const role = classify(src[i]!, src[i + 1]!, src[i + 2]!, src[i + 3]!)
+    if (role === 'lite' || role === 'mid' || role === 'deep' || role === 'center') mask[p] = 1
+  }
+  return { w: sheet.w, h: sheet.h, mask }
+}
+
 function classify(r: number, g: number, b: number, a: number): 'skip' | 'keep' | 'lite' | 'mid' | 'deep' | 'center' {
   if (a < 20 || r + g + b < 18) return 'skip'
   if (g >= r + 6 && g >= b - 12 && g > 36) return 'keep'
@@ -294,6 +309,22 @@ function sheetOpaqueNear(
   return false
 }
 
+/** Same lean the bloom PNG uses, so a halo can sit under the head. */
+export function bloomLean(
+  sway: number,
+  pitchT: number,
+  onsetPulse: number,
+  restT: number,
+  wiltT: number,
+): number {
+  return (
+    Math.sin(sway) * (0.12 + pitchT * 0.1) * (1 - wiltT) +
+    Math.sin(sway * 2.4) * onsetPulse * 0.16 +
+    restT * 0.18 +
+    wiltT * 0.28
+  )
+}
+
 export function drawBloomArt(
   ctx: CanvasRenderingContext2D,
   gx: number,
@@ -322,14 +353,11 @@ export function drawBloomArt(
     wiltT,
     onsetPulse,
   )
-  const lean =
-    Math.sin(sway) * (0.12 + pitchT * 0.1) * (1 - wiltT) +
-    Math.sin(sway * 2.4) * onsetPulse * 0.16 +
-    restT * 0.18 +
-    wiltT * 0.28
+  const lean = bloomLean(sway, pitchT, onsetPulse, restT, wiltT)
 
   ctx.save()
   ctx.imageSmoothingEnabled = false
+  ctx.globalCompositeOperation = 'source-over'
   ctx.globalAlpha = 1 - wiltT * 0.82
   ctx.translate(gx * scale, gy * scale)
   ctx.rotate(lean)

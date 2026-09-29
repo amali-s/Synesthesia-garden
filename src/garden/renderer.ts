@@ -297,10 +297,8 @@ export class GardenRenderer {
     const glow = flowerGlow(plant, now)
     const singing = glow.singing
     const pulse = reduce ? 0 : glow.pulse
-    this.resonance.set(
-      plant,
-      glowAmount(plant.hz, listen, plant.wiltStarted !== null),
-    )
+    const resonance = glowAmount(plant.hz, listen, plant.wiltStarted !== null)
+    this.resonance.set(plant, resonance)
     drawFlower(
       ctx,
       plant.x,
@@ -315,11 +313,11 @@ export class GardenRenderer {
       onsetPulse,
       life.restT,
       life.wiltT,
-      plant.baseHue,
       plant.hz,
       reduce,
       singing,
       pulse,
+      resonance,
     )
   }
 
