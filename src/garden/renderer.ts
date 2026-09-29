@@ -16,9 +16,10 @@ import {
   syncMailboxForView,
 } from './critters'
 import type { ForageView } from './forage'
+import { glowAmount, type ListenLight } from './glow'
 import { ACCENTS, GROUND, hourShadowOffsetForListenMs, hourTintForListenMs } from './palette'
 import { drawFlower, drawGrass } from './sprites'
-import { flowerGlow, plantLife, type Garden, type Plant } from './world'
+import { flowerGlow, plantLife, type FlowerPlant, type Garden, type Plant } from './world'
 
 export type RendererOptions = {
   /** Screen pixels per logical pixel */
@@ -52,6 +53,8 @@ export class GardenRenderer {
   reducedMotion = false
   /** True after the first real fit; share-bar height jitters must not reflow beds. */
   private fitted = false
+  /** Pitch-class glow from the latest draw, for halo / dusk / firefly / legend. */
+  private resonance = new Map<FlowerPlant, number>()
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -152,13 +155,20 @@ export class GardenRenderer {
     this.bgDirty = true
   }
 
+  /** Pitch-class glow written for this flower on the last draw, 0–1. */
+  resonanceOf(plant: FlowerPlant): number {
+    return this.resonance.get(plant) ?? 0
+  }
+
   draw(
     garden: Garden,
     now: number,
     livePitchT: number | null,
     forage: ForageView | null = null,
+    listen: ListenLight | null = null,
   ): void {
     const { ctx, scale, logicalW, originX, originY } = this
+    this.resonance.clear()
     this.ensureBackground(garden.listenMs)
     ctx.drawImage(this.bgCanvas, 0, 0)
 
@@ -167,7 +177,7 @@ export class GardenRenderer {
 
     for (const bed of bedsBackToFront()) {
       for (const plant of garden.plantsInBed(bed.id)) {
-        this.drawPlant(plant, now, garden.lastOnset)
+        this.drawPlant(plant, now, garden.lastOnset, listen)
       }
     }
 
@@ -256,7 +266,12 @@ export class GardenRenderer {
     this.bgDirty = false
   }
 
-  private drawPlant(plant: Plant, now: number, lastOnset: number): void {
+  private drawPlant(
+    plant: Plant,
+    now: number,
+    lastOnset: number,
+    listen: ListenLight | null,
+  ): void {
     const { ctx, scale, logicalW } = this
     const life = plantLife(plant, now)
     const age = (now - plant.born) / 1000
@@ -282,6 +297,10 @@ export class GardenRenderer {
     const glow = flowerGlow(plant, now)
     const singing = glow.singing
     const pulse = reduce ? 0 : glow.pulse
+    this.resonance.set(
+      plant,
+      glowAmount(plant.hz, listen, plant.wiltStarted !== null),
+    )
     drawFlower(
       ctx,
       plant.x,

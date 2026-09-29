@@ -11,6 +11,7 @@ import { BloomChime } from './audio/chime'
 import { bedFromPitch, compassBedIds, GRID_COLS, GRID_ROWS, type BedId } from './garden/beds'
 import { loadBloomArt, tintedBloomCanvas } from './garden/bloomArt'
 import { loadCritterArt } from './garden/critters'
+import { glowAmount, smoothLoudness, type ListenLight } from './garden/glow'
 import { Garden, plantLife, type FlowerPlant, type Plant } from './garden/world'
 import { GardenRenderer } from './garden/renderer'
 import { GardenScene } from './garden/scene3d/GardenScene'
@@ -158,6 +159,12 @@ let listenMode: ListenMode = 'speaker'
 let listening = false
 let livePitchT: number | null = null
 let smoothedHz: number | null = null
+let smoothedLoudness = 0
+let listenLight: ListenLight | null = null
+/** Last voiced hz / pan / register, held while loudness releases to 0. */
+let heldVoice: ListenLight | null = null
+/** Dev hook voice. When set, it drives the listen light instead of the mic. */
+let devVoice: ListenLight | null = null
 let lastFrameNow = 0
 /** Flower the pointer is currently over; one hover-chime until leave. */
 let hoverFlower: FlowerPlant | null = null
@@ -290,7 +297,12 @@ function applyView(next: GardenView): void {
   fitScene3d()
   if (next === 'among' && scene3d) {
     const now = lastFrameNow || performance.now()
-    scene3d.render(garden, now, forageRun && !forageRun.done ? forageRun.view(now) : null)
+    scene3d.render(
+      garden,
+      now,
+      forageRun && !forageRun.done ? forageRun.view(now) : null,
+      listenLight,
+    )
   }
 }
 
@@ -407,7 +419,51 @@ function updateHud(hz: number | null, planted: boolean): void {
 function resetLivePitch(): void {
   livePitchT = null
   smoothedHz = null
+  smoothedLoudness = 0
+  listenLight = null
+  heldVoice = null
   updateHud(null, false)
+}
+
+function stepListenLight(voiced: ListenLight | null, dt: number, hud: boolean): void {
+  if (voiced) {
+    smoothedLoudness = smoothLoudness(smoothedLoudness, voiced.loudnessT, dt)
+    heldVoice = voiced
+    listenLight = {
+      hz: voiced.hz,
+      loudnessT: smoothedLoudness,
+      panT: voiced.panT,
+      pitchT: voiced.pitchT,
+    }
+    if (hud) {
+      smoothedHz = smoothedHz === null ? voiced.hz : smoothedHz * 0.7 + voiced.hz * 0.3
+      livePitchT = pitchNorm(smoothedHz, listenMode)
+      updateHud(smoothedHz, true)
+      setMood('Blooming')
+    } else {
+      livePitchT = voiced.pitchT
+    }
+    return
+  }
+
+  smoothedLoudness = smoothLoudness(smoothedLoudness, 0, dt)
+  if (smoothedLoudness <= 0.008 || !heldVoice) {
+    smoothedLoudness = 0
+    listenLight = null
+    heldVoice = null
+  } else {
+    listenLight = {
+      hz: heldVoice.hz,
+      loudnessT: smoothedLoudness,
+      panT: heldVoice.panT,
+      pitchT: heldVoice.pitchT,
+    }
+  }
+  livePitchT = null
+  if (hud) {
+    updateHud(null, false)
+    setMood('quiet')
+  }
 }
 
 function kindLabel(kind: string): string {
@@ -854,24 +910,27 @@ if (typeof ResizeObserver !== 'undefined' && glass) {
 }
 
 function frame(now: number): void {
+  const dt = lastFrameNow > 0 ? Math.min(80, Math.max(0, now - lastFrameNow)) : 16
   lastFrameNow = now
   garden.tick(now, listening)
 
+  let micVoice: ListenLight | null = null
   if (listening) {
     const sample = detector.sample()
     garden.ingest(sample, now)
-
     if (sample.isVoice && sample.hz !== null) {
-      smoothedHz =
-        smoothedHz === null ? sample.hz : smoothedHz * 0.7 + sample.hz * 0.3
-      livePitchT = pitchNorm(smoothedHz, listenMode)
-      updateHud(smoothedHz, true)
-      setMood('Blooming')
-    } else {
-      livePitchT = null
-      updateHud(null, false)
-      setMood('quiet')
+      micVoice = {
+        hz: sample.hz,
+        loudnessT: sample.loudnessT,
+        panT: sample.panT,
+        pitchT: sample.pitchT,
+      }
     }
+  }
+
+  const voiced = devVoice ?? (listening ? micVoice : null)
+  if (listening || devVoice || smoothedLoudness > 0) {
+    stepListenLight(voiced, dt, listening && !devVoice)
   }
 
   if (undoSnapshot && hasLivingFlower()) dropUndo()
@@ -883,9 +942,9 @@ function frame(now: number): void {
   syncCourtyardCaption()
   const forageView = tickForage(now)
   if (gardenView === 'among' && scene3d) {
-    scene3d.render(garden, now, forageView)
+    scene3d.render(garden, now, forageView, listenLight)
   } else {
-    renderer.draw(garden, now, livePitchT, forageView)
+    renderer.draw(garden, now, livePitchT, forageView, listenLight)
   }
   requestAnimationFrame(frame)
 }
@@ -893,5 +952,28 @@ function frame(now: number): void {
 requestAnimationFrame(frame)
 
 if (import.meta.env.DEV) {
-  Object.assign(window, { __sg: { garden, chime, renderer, scene3d } })
+  Object.assign(window, {
+    __sg: {
+      garden,
+      chime,
+      renderer,
+      scene3d,
+      get listenLight() {
+        return listenLight
+      },
+      hear(voice: { hz: number; loudnessT: number; panT?: number; pitchT?: number } | null) {
+        devVoice = voice
+          ? {
+              hz: voice.hz,
+              loudnessT: Math.min(1, Math.max(0, voice.loudnessT)),
+              panT: voice.panT ?? 0.5,
+              pitchT: voice.pitchT ?? pitchNorm(voice.hz, listenMode),
+            }
+          : null
+      },
+      glowOf(plant: FlowerPlant) {
+        return glowAmount(plant.hz, listenLight, plant.wiltStarted !== null)
+      },
+    },
+  })
 }

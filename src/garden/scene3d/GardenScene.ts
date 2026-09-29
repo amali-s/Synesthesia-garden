@@ -32,6 +32,7 @@ import { pitchClassT } from '../../audio/pitch'
 import { tintedBloomHeadCanvas } from '../bloomArt'
 import { foxImage, mailboxImage } from '../critters'
 import type { ForageView } from '../forage'
+import { glowAmount, type ListenLight } from '../glow'
 import { bloomPaintRgb, GROUND, hourTintForListenMs, PASTEL } from '../palette'
 import { FLOWER_KINDS, type FlowerKind } from '../sprites'
 import { flowerGlow, plantLife, type FlowerPlant, type Garden } from '../world'
@@ -248,12 +249,28 @@ export class GardenScene {
     this.camera.updateProjectionMatrix()
   }
 
-  render(garden: Garden, now = 0, forage: ForageView | null = null): void {
+  /**
+   * Pitch-class glow written into emissive (`vInstanceExtra.x`) on the last render, 0–1.
+   */
+  resonanceOf(plant: FlowerPlant): number {
+    const index = this.bloomAt[plant.kind].indexOf(plant)
+    if (index < 0) return 0
+    const extra = this.blooms[plant.kind].extra
+    if (!extra) return 0
+    return extra.getX(index)
+  }
+
+  render(
+    garden: Garden,
+    now = 0,
+    forage: ForageView | null = null,
+    listen: ListenLight | null = null,
+  ): void {
     const dt = this.prevNow === 0 ? 0 : Math.max(0, (now - this.prevNow) / 1000)
     this.prevNow = now
     this.look.update(dt, this.reducedMotion)
     this.look.apply(this.camera)
-    this.sync(garden, now, forage)
+    this.sync(garden, now, forage, listen)
     this.applyHour(garden.listenMs)
     this.renderer.render(this.scene, this.camera)
   }
@@ -383,8 +400,13 @@ export class GardenScene {
     this.hemi.groundColor.set('#d2c4a0')
   }
 
-  private sync(garden: Garden, now: number, forage: ForageView | null): void {
-    this.syncFlowers(garden, now)
+  private sync(
+    garden: Garden,
+    now: number,
+    forage: ForageView | null,
+    listen: ListenLight | null,
+  ): void {
+    this.syncFlowers(garden, now, listen)
     this.writeGrass(now, garden.lastOnset, this.reducedMotion)
     this.syncForage(forage)
   }
@@ -512,7 +534,7 @@ export class GardenScene {
     mat.dispose()
   }
 
-  private syncFlowers(garden: Garden, now: number): void {
+  private syncFlowers(garden: Garden, now: number, listen: ListenLight | null): void {
     const flowers: FlowerPlant[] = []
     const byKind: Record<FlowerKind, number> = {
       daisy: 0,
@@ -607,6 +629,7 @@ export class GardenScene {
       const paint = bloomPaintRgb(pcT, plant.pitchT, plant.timbreT, life.wiltT)
       const glow = flowerGlow(plant, now)
       const glowAmt = 0.18 * glow.singing + 0.55 * glow.pulse
+      const resonance = glowAmount(plant.hz, listen, plant.wiltStarted !== null)
       const punch = 1.38 + glowAmt * 1.15
       this.paintColor.setRGB(
         (paint.mid[0] / 255) * punch,
@@ -620,7 +643,7 @@ export class GardenScene {
         Math.min(0.55, Math.max(0.44, this.paintHsl.l * 0.82)),
       )
       bloom.mesh.setColorAt(kindI, this.paintColor)
-      bloom.extra?.setXY(kindI, glowAmt, jewelFromSound(plant.pitchT, plant.timbreT))
+      bloom.extra?.setXY(kindI, resonance, jewelFromSound(plant.pitchT, plant.timbreT))
       this.bloomAt[plant.kind].push(plant)
       usedKind[plant.kind]++
 
