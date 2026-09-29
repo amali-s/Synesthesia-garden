@@ -12,6 +12,7 @@ import { bedFromPitch, compassBedIds, GRID_COLS, GRID_ROWS, type BedId } from '.
 import { loadBloomArt, tintedBloomCanvas } from './garden/bloomArt'
 import { loadCritterArt } from './garden/critters'
 import { glowAmount, smoothLoudness, type ListenLight } from './garden/glow'
+import { duskWeight, stepDuskT } from './garden/palette'
 import { Garden, plantLife, type FlowerPlant, type Plant } from './garden/world'
 import { GardenRenderer } from './garden/renderer'
 import { GardenScene } from './garden/scene3d/GardenScene'
@@ -157,6 +158,8 @@ const chime = new BloomChime(detector.audioContext)
 
 let listenMode: ListenMode = 'speaker'
 let listening = false
+/** Linear 0–1. Play eases toward night, Pause toward daylight. */
+let duskLinear = 0
 let livePitchT: number | null = null
 let smoothedHz: number | null = null
 let smoothedLoudness = 0
@@ -302,6 +305,7 @@ function applyView(next: GardenView): void {
       now,
       forageRun && !forageRun.done ? forageRun.view(now) : null,
       listenLight,
+      duskWeight(duskLinear),
     )
   }
 }
@@ -913,6 +917,8 @@ function frame(now: number): void {
   const dt = lastFrameNow > 0 ? Math.min(80, Math.max(0, now - lastFrameNow)) : 16
   lastFrameNow = now
   garden.tick(now, listening)
+  duskLinear = stepDuskT(duskLinear, listening, dt)
+  const duskT = duskWeight(duskLinear)
 
   let micVoice: ListenLight | null = null
   if (listening) {
@@ -942,9 +948,9 @@ function frame(now: number): void {
   syncCourtyardCaption()
   const forageView = tickForage(now)
   if (gardenView === 'among' && scene3d) {
-    scene3d.render(garden, now, forageView, listenLight)
+    scene3d.render(garden, now, forageView, listenLight, duskT)
   } else {
-    renderer.draw(garden, now, livePitchT, forageView, listenLight)
+    renderer.draw(garden, now, livePitchT, forageView, listenLight, duskT)
   }
   requestAnimationFrame(frame)
 }

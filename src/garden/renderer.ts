@@ -17,7 +17,13 @@ import {
 } from './critters'
 import type { ForageView } from './forage'
 import { glowAmount, type ListenLight } from './glow'
-import { ACCENTS, GROUND, hourShadowOffsetForListenMs, hourTintForListenMs } from './palette'
+import {
+  ACCENTS,
+  DUSK,
+  GROUND,
+  hourGelForDusk,
+  hourShadowOffsetForListenMs,
+} from './palette'
 import { drawFlower, drawGrass } from './sprites'
 import { flowerGlow, plantLife, type FlowerPlant, type Garden, type Plant } from './world'
 
@@ -166,11 +172,14 @@ export class GardenRenderer {
     livePitchT: number | null,
     forage: ForageView | null = null,
     listen: ListenLight | null = null,
+    duskT = 0,
   ): void {
     const { ctx, scale, logicalW, originX, originY } = this
     this.resonance.clear()
     this.ensureBackground(garden.listenMs)
     ctx.drawImage(this.bgCanvas, 0, 0)
+    // Veil on the blit, under blooms, so the soil cache stays put and glow stays bright.
+    this.drawDuskWash(duskT)
 
     ctx.save()
     ctx.translate(originX, originY)
@@ -196,7 +205,7 @@ export class GardenRenderer {
     drawMailbox(ctx, scale, forage?.mailboxFlag ?? false)
     if (forage) this.drawForage(forage)
     ctx.restore()
-    this.drawHourGel(garden.listenMs)
+    this.drawHourGel(garden.listenMs, duskT)
   }
 
   private drawForage(forage: ForageView): void {
@@ -365,9 +374,21 @@ export class GardenRenderer {
     }
   }
 
-  private drawHourGel(listenMs: number): void {
+  private drawDuskWash(duskT: number): void {
+    if (duskT <= 0) return
     const { ctx, viewW, viewH } = this
-    const hour = hourTintForListenMs(listenMs)
+    ctx.save()
+    ctx.globalAlpha = DUSK.washAlpha * duskT
+    ctx.fillStyle = DUSK.wash
+    ctx.fillRect(0, 0, viewW, viewH)
+    ctx.restore()
+    ctx.imageSmoothingEnabled = false
+  }
+
+  private drawHourGel(listenMs: number, duskT: number): void {
+    const { ctx, viewW, viewH } = this
+    const hour = hourGelForDusk(listenMs, duskT)
+    if (hour.alpha <= 0) return
     ctx.save()
     ctx.globalAlpha = hour.alpha
     ctx.fillStyle = hour.tint

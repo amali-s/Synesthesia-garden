@@ -33,7 +33,7 @@ import { tintedBloomHeadCanvas } from '../bloomArt'
 import { foxImage, mailboxImage } from '../critters'
 import type { ForageView } from '../forage'
 import { glowAmount, type ListenLight } from '../glow'
-import { bloomPaintRgb, GROUND, hourTintForListenMs, PASTEL } from '../palette'
+import { bloomPaintRgb, DUSK, GROUND, hourGelForDusk, PASTEL } from '../palette'
 import { FLOWER_KINDS, type FlowerKind } from '../sprites'
 import { flowerGlow, plantLife, type FlowerPlant, type Garden } from '../world'
 import {
@@ -105,6 +105,10 @@ export class GardenScene {
   private readonly sky = new Color()
   private readonly hourColor = new Color()
   private readonly white = new Color(0xffffff)
+  private readonly duskWash = new Color(DUSK.wash)
+  private readonly duskHemi = new Color(DUSK.hemi)
+  private readonly duskGround = new Color(DUSK.ground)
+  private readonly duskSun = new Color(DUSK.sun)
   private readonly dummy = new Object3D()
   private readonly euler = new Euler()
   private readonly baseMat = new Matrix4()
@@ -265,13 +269,14 @@ export class GardenScene {
     now = 0,
     forage: ForageView | null = null,
     listen: ListenLight | null = null,
+    duskT = 0,
   ): void {
     const dt = this.prevNow === 0 ? 0 : Math.max(0, (now - this.prevNow) / 1000)
     this.prevNow = now
     this.look.update(dt, this.reducedMotion)
     this.look.apply(this.camera)
     this.sync(garden, now, forage, listen)
-    this.applyHour(garden.listenMs)
+    this.applyHour(garden.listenMs, duskT)
     this.renderer.render(this.scene, this.camera)
   }
 
@@ -379,11 +384,13 @@ export class GardenScene {
     this.renderer.dispose()
   }
 
-  private applyHour(listenMs: number): void {
-    const hour = hourTintForListenMs(listenMs)
+  private applyHour(listenMs: number, duskT: number): void {
+    const night = Math.min(1, Math.max(0, duskT))
+    const hour = hourGelForDusk(listenMs, night)
     this.sky.set('#d4ecdf')
     this.hourColor.set(hour.tint)
     this.sky.lerp(this.hourColor, hour.alpha * 0.65)
+    this.sky.lerp(this.duskWash, night * DUSK.washAlpha)
     this.scene.background = this.sky
     this.renderer.setClearColor(this.sky)
     this.fog.color.copy(this.sky)
@@ -393,11 +400,16 @@ export class GardenScene {
     this.sun.target.position.set(0, 0, 0)
     this.sun.color.copy(this.hourColor)
     this.sun.color.lerp(this.white, Math.min(0.55, pose.intensity * 0.35))
-    this.sun.intensity = Math.max(1.45, pose.intensity * 1.25)
+    this.sun.color.lerp(this.duskSun, night)
+    const daySun = Math.max(1.45, pose.intensity * 1.25)
+    this.sun.intensity = daySun + (DUSK.sunIntensity - daySun) * night
 
     this.hemi.color.set('#f2efe4')
     this.hemi.color.lerp(this.hourColor, hour.alpha * 0.3)
+    this.hemi.color.lerp(this.duskHemi, night)
     this.hemi.groundColor.set('#d2c4a0')
+    this.hemi.groundColor.lerp(this.duskGround, night)
+    this.hemi.intensity = 0.95 + (DUSK.hemiIntensity - 0.95) * night
   }
 
   private sync(

@@ -69,6 +69,28 @@ export const HOUR_WATCH: ReadonlyArray<{
 /** Full listen-time hour shift, in ms (does not loop). */
 export const SKY_LISTEN_MS = 9 * 60 * 1000
 
+/**
+ * Listening atmosphere. A veil over the cached court, not new ground art.
+ * It replaces the hour gel while Play is on.
+ */
+export const DUSK = {
+  /** Dark blue-green. */
+  wash: '#123C44',
+  /** Strong enough that glow reads; gravel and timber still show. */
+  washAlpha: 0.58,
+  /** Cool hemisphere sky. */
+  hemi: '#8FB6C0',
+  /** Cool hemisphere ground. */
+  ground: '#2A4046',
+  /** Cool sun. */
+  sun: '#C9DDE4',
+  hemiIntensity: 0.34,
+  sunIntensity: 0.45,
+} as const
+
+/** Play eases dusk in, Pause eases it out, over this many ms. */
+export const DUSK_EASE_MS = 500
+
 function hexToRgb(hex: string): [number, number, number] {
   const n = hex.replace('#', '')
   return [
@@ -103,6 +125,39 @@ export function hourTintForListenMs(listenMs: number): { tint: string; alpha: nu
     tint: lerpHex(a.tint, b.tint, u),
     alpha: a.alpha + (b.alpha - a.alpha) * u,
   }
+}
+
+function clamp01(n: number): number {
+  return Math.min(1, Math.max(0, n))
+}
+
+/**
+ * Hour gel left once dusk owns the sky. Full night paints none of it,
+ * so a long listen cannot walk dawn → noon → dusk on top of the wash.
+ */
+export function hourGelForDusk(
+  listenMs: number,
+  duskT: number,
+): { tint: string; alpha: number } {
+  const hour = hourTintForListenMs(listenMs)
+  return { tint: hour.tint, alpha: hour.alpha * (1 - clamp01(duskT)) }
+}
+
+/** Linear 0–1 clock. Reaches Play or Pause in {@link DUSK_EASE_MS}. */
+export function stepDuskT(current: number, listening: boolean, dtMs: number): number {
+  const from = clamp01(current)
+  const target = listening ? 1 : 0
+  if (from === target) return target
+  const dt = Math.max(0, dtMs)
+  if (dt === 0) return from
+  const delta = dt / DUSK_EASE_MS
+  return target > from ? Math.min(target, from + delta) : Math.max(target, from - delta)
+}
+
+/** Ease-in-out for the linear dusk clock. Ends still land on 0 and 1. */
+export function duskWeight(t: number): number {
+  const u = clamp01(t)
+  return u * u * (3 - 2 * u)
 }
 
 /**
