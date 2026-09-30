@@ -16,6 +16,20 @@ import {
   syncMailboxForView,
 } from './critters'
 import type { ForageView } from './forage'
+import {
+  createFirefly,
+  fireflyPaint,
+  fireflyTarget,
+  FIREFLY_BODY,
+  FIREFLY_LAMP,
+  liveHz,
+  POLLEN_HEAD_LIFT,
+  POLLEN_RESONANCE,
+  shedPollen,
+  stepFirefly,
+  stepPollen,
+  type PollenSource,
+} from './firefly'
 import { glowAmount, type ListenLight } from './glow'
 import {
   ACCENTS,
@@ -61,6 +75,9 @@ export class GardenRenderer {
   private fitted = false
   /** Pitch-class glow from the latest draw, for halo / dusk / firefly / legend. */
   private resonance = new Map<FlowerPlant, number>()
+  private firefly = createFirefly()
+  /** Sentinel so the first melody frame does not inherit a huge dt. */
+  private melodyNow = -1
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -174,7 +191,7 @@ export class GardenRenderer {
     listen: ListenLight | null = null,
     duskT = 0,
   ): void {
-    const { ctx, scale, logicalW, originX, originY } = this
+    const { ctx, scale, originX, originY } = this
     this.resonance.clear()
     this.ensureBackground(garden.listenMs)
     ctx.drawImage(this.bgCanvas, 0, 0)
@@ -190,22 +207,112 @@ export class GardenRenderer {
       }
     }
 
-    if (livePitchT !== null) {
-      const pulse = this.reducedMotion ? 1 : 0.5 + 0.5 * Math.sin(now / 120)
-      const size = 2 + Math.round(pulse * 2)
-      const bed = GARDEN_BEDS.find(
-        (b) => livePitchT >= b.pitch0 && livePitchT < b.pitch1,
-      )
-      const cx = bed ? bed.x + bed.w - 10 : logicalW - 14
-      const cy = bed ? bed.y + 10 : 14
-      ctx.fillStyle = `hsl(${(350 + livePitchT * 42) % 360} ${28 + livePitchT * 44}% ${68 - livePitchT * 14}%)`
-      ctx.fillRect((cx - size) * scale, (cy - size) * scale, size * 2 * scale, size * 2 * scale)
-    }
+    this.drawMelody(livePitchT, listen, now)
 
     drawMailbox(ctx, scale, forage?.mailboxFlag ?? false)
     if (forage) this.drawForage(forage)
     ctx.restore()
     this.drawHourGel(garden.listenMs, duskT)
+  }
+
+  /**
+   * Firefly chases the live register. Trail and pollen are additive pixels.
+   * Reduced motion parks the bug and sheds nothing.
+   */
+  private drawMelody(
+    livePitchT: number | null,
+    listen: ListenLight | null,
+    now: number,
+  ): void {
+    const dt = this.melodyDt(now)
+    const reduce = this.reducedMotion
+    const fly = this.firefly
+
+    if (reduce) {
+      fly.trail.length = 0
+      fly.pollen.length = 0
+    } else {
+      stepPollen(fly, dt, false)
+    }
+
+    if (livePitchT !== null) {
+      const paint = fireflyPaint(liveHz(listen), livePitchT)
+      const target = fireflyTarget(livePitchT, listen?.panT ?? 0.5, this.logicalW)
+      stepFirefly(fly, target, listen?.loudnessT ?? 0, dt, paint.body, reduce)
+      if (!reduce) this.shedFromBlooms(dt)
+      this.paintMelody(paint, true)
+      return
+    }
+
+    if (!reduce && fly.placed) {
+      stepFirefly(fly, { x: fly.x, y: fly.y }, 0, dt, '', false)
+      this.shedFromBlooms(dt)
+    }
+    if (!reduce && (fly.trail.length > 0 || fly.pollen.length > 0)) {
+      this.paintMelody(fireflyPaint(liveHz(listen), 0), false)
+    }
+  }
+
+  private melodyDt(now: number): number {
+    const prev = this.melodyNow
+    this.melodyNow = now
+    if (prev < 0) return 16
+    return Math.min(48, Math.max(0, now - prev))
+  }
+
+  private shedFromBlooms(dt: number): void {
+    const sources: PollenSource[] = []
+    for (const [plant, resonance] of this.resonance) {
+      if (plant.wiltStarted !== null || !(resonance > POLLEN_RESONANCE)) continue
+      sources.push({
+        x: plant.x,
+        y: plant.y - POLLEN_HEAD_LIFT,
+        resonance,
+        living: true,
+        hz: plant.hz,
+      })
+    }
+    if (sources.length === 0) return
+    const rolls = new Array<number>(sources.length)
+    for (let i = 0; i < sources.length; i++) rolls[i] = Math.random()
+    shedPollen(this.firefly, sources, dt, rolls, false)
+  }
+
+  private paintMelody(paint: { body: string; core: string }, showBug: boolean): void {
+    const { ctx, scale } = this
+    const fly = this.firefly
+    ctx.save()
+    ctx.globalCompositeOperation = 'lighter'
+    ctx.imageSmoothingEnabled = false
+
+    const trail = fly.trail
+    for (let i = 0; i < trail.length; i++) {
+      const point = trail[i]!
+      ctx.globalAlpha = point.life * point.life
+      ctx.fillStyle = point.color
+      ctx.fillRect(Math.round(point.x) * scale, Math.round(point.y) * scale, scale, scale)
+    }
+
+    for (const mote of fly.pollen) {
+      ctx.globalAlpha = mote.life
+      ctx.fillStyle = mote.color
+      ctx.fillRect(Math.round(mote.x) * scale, Math.round(mote.y) * scale, scale, scale)
+    }
+
+    if (showBug) {
+      const x = Math.round(fly.x)
+      const y = Math.round(fly.y)
+      ctx.globalAlpha = 1
+      ctx.fillStyle = paint.body
+      for (const [dx, dy] of FIREFLY_BODY) {
+        ctx.fillRect((x + dx) * scale, (y + dy) * scale, scale, scale)
+      }
+      ctx.fillStyle = paint.core
+      ctx.fillRect((x + FIREFLY_LAMP[0]) * scale, (y + FIREFLY_LAMP[1]) * scale, scale, scale)
+    }
+
+    ctx.restore()
+    ctx.imageSmoothingEnabled = false
   }
 
   private drawForage(forage: ForageView): void {
