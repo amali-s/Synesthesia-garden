@@ -17,6 +17,7 @@ import {
   NearestFilter,
   Object3D,
   PerspectiveCamera,
+  PointLight,
   Raycaster,
   SRGBColorSpace,
   Scene,
@@ -32,6 +33,7 @@ import { pitchClassT } from '../../audio/pitch'
 import { tintedBloomHeadCanvas } from '../bloomArt'
 import { foxImage, mailboxImage } from '../critters'
 import type { ForageView } from '../forage'
+import { fireflyPaint } from '../firefly'
 import { glowAmount, type ListenLight } from '../glow'
 import {
   createOnsetGate,
@@ -63,7 +65,7 @@ import {
   MAILBOX_WORLD,
   foxWorldPose,
 } from './forage3d'
-import { plantToWorld, sunPoseForListenMs } from './layout'
+import { fireflyWorldPosition, plantToWorld, sunPoseForListenMs } from './layout'
 import {
   LookControl,
   flowerFromInstance,
@@ -116,6 +118,13 @@ export class GardenScene {
   private readonly duskHemi = new Color(DUSK.hemi)
   private readonly duskGround = new Color(DUSK.ground)
   private readonly duskSun = new Color(DUSK.sun)
+  private readonly dayGround = new Color('#8faf7a')
+  private readonly daySeat = new Color(GROUND.cream)
+  private readonly fireflyTex: CanvasTexture
+  private readonly fireflyMat: SpriteMaterial
+  private readonly fireflySprite: Sprite
+  private readonly fireflyLight: PointLight
+  private readonly fireflyColor = new Color()
   private readonly dummy = new Object3D()
   private readonly euler = new Euler()
   private readonly baseMat = new Matrix4()
@@ -238,6 +247,26 @@ export class GardenScene {
       this.scene.add(s)
       return s
     })
+
+    this.fireflyTex = makeFireflyTexture()
+    this.fireflyMat = new SpriteMaterial({
+      map: this.fireflyTex,
+      transparent: true,
+      depthWrite: false,
+      depthTest: true,
+      toneMapped: false,
+    })
+    this.fireflySprite = new Sprite(this.fireflyMat)
+    this.fireflySprite.scale.set(0.38, 0.38, 1)
+    this.fireflySprite.center.set(0.5, 0.5)
+    this.fireflySprite.visible = false
+    this.fireflySprite.frustumCulled = false
+    this.fireflySprite.renderOrder = 6
+    this.fireflySprite.raycast = noopRaycast
+    this.scene.add(this.fireflySprite)
+    this.fireflyLight = new PointLight('#fff6c2', 0, 9, 2)
+    this.fireflyLight.visible = false
+    this.scene.add(this.fireflyLight)
   }
 
   static tryCreate(canvas: HTMLCanvasElement): GardenScene | null {
@@ -278,6 +307,7 @@ export class GardenScene {
     forage: ForageView | null = null,
     listen: ListenLight | null = null,
     duskT = 0,
+    livePitchT: number | null = null,
   ): void {
     const dt = this.prevNow === 0 ? 0 : Math.max(0, (now - this.prevNow) / 1000)
     this.prevNow = now
@@ -287,6 +317,7 @@ export class GardenScene {
     stepOnsetGate(this.onsetGate, now, garden.lastOnset, this.reducedMotion)
     this.sync(garden, now, forage, listen)
     this.applyHour(garden.listenMs, duskT)
+    this.placeFirefly(listen, livePitchT, now)
     this.renderer.render(this.scene, this.camera)
   }
 
@@ -387,6 +418,11 @@ export class GardenScene {
     this.disposeBillboard(this.foxSprite)
     this.disposeBillboard(this.liftSprite)
     for (const s of this.carrySprites) this.disposeBillboard(s)
+    this.scene.remove(this.fireflySprite)
+    this.fireflyMat.dispose()
+    this.fireflyTex.dispose()
+    this.scene.remove(this.fireflyLight)
+    this.fireflyLight.dispose()
     for (const tex of this.pixelTextures.values()) tex.dispose()
     this.pixelTextures.clear()
     for (const tex of this.canvasTextures.values()) tex.dispose()
@@ -400,10 +436,16 @@ export class GardenScene {
     this.sky.set('#d4ecdf')
     this.hourColor.set(hour.tint)
     this.sky.lerp(this.hourColor, hour.alpha * 0.65)
-    this.sky.lerp(this.duskWash, night * DUSK.washAlpha)
+    // Fuller than the courtyard veil. A 0.58 mix of the day sky still reads as afternoon.
+    this.sky.lerp(this.duskWash, night * 0.92)
     this.scene.background = this.sky
     this.renderer.setClearColor(this.sky)
     this.fog.color.copy(this.sky)
+
+    this.groundMat.color.copy(this.dayGround)
+    this.groundMat.color.lerp(this.duskGround, night * 0.78)
+    this.seatMat.color.copy(this.daySeat)
+    this.seatMat.color.lerp(this.duskGround, night * 0.55)
 
     const pose = sunPoseForListenMs(listenMs)
     this.sun.position.set(pose.x, pose.y, pose.z)
@@ -412,14 +454,43 @@ export class GardenScene {
     this.sun.color.lerp(this.white, Math.min(0.55, pose.intensity * 0.35))
     this.sun.color.lerp(this.duskSun, night)
     const daySun = Math.max(1.45, pose.intensity * 1.25)
-    this.sun.intensity = daySun + (DUSK.sunIntensity - daySun) * night
+    this.sun.intensity = daySun + (0.16 - daySun) * night
 
     this.hemi.color.set('#f2efe4')
     this.hemi.color.lerp(this.hourColor, hour.alpha * 0.3)
     this.hemi.color.lerp(this.duskHemi, night)
     this.hemi.groundColor.set('#d2c4a0')
     this.hemi.groundColor.lerp(this.duskGround, night)
-    this.hemi.intensity = 0.95 + (DUSK.hemiIntensity - 0.95) * night
+    this.hemi.intensity = 0.95 + (0.14 - 0.95) * night
+  }
+
+  /** Melody lamp on the pitch ring. Hidden when no live note is in the air. */
+  private placeFirefly(
+    listen: ListenLight | null,
+    livePitchT: number | null,
+    now: number,
+  ): void {
+    if (livePitchT === null) {
+      this.fireflySprite.visible = false
+      this.fireflyLight.visible = false
+      this.fireflyLight.intensity = 0
+      return
+    }
+    const pitchT = listen?.pitchT ?? livePitchT
+    const panT = listen?.panT ?? 0.5
+    const loudnessT = listen?.loudnessT ?? 0.35
+    const hz = listen && listen.hz > 0 ? listen.hz : null
+    const bob = this.reducedMotion ? 0 : Math.sin(now / 280) * 0.1
+    const pose = fireflyWorldPosition(pitchT, panT, loudnessT, bob)
+    this.fireflySprite.position.set(pose.x, pose.y, pose.z)
+    this.fireflySprite.visible = true
+    this.fireflyLight.position.set(pose.x, pose.y, pose.z)
+    this.fireflyLight.visible = true
+    this.fireflyLight.intensity = 1.4 + loudnessT * 2.2
+    const paint = fireflyPaint(hz, pitchT)
+    paintCss(this.fireflyColor, paint.core)
+    this.fireflyMat.color.copy(this.fireflyColor)
+    this.fireflyLight.color.copy(this.fireflyColor)
   }
 
   private sync(
@@ -719,6 +790,60 @@ export class GardenScene {
 }
 
 function noopRaycast(): void {}
+
+function makeFireflyTexture(): CanvasTexture {
+  const canvas = document.createElement('canvas')
+  canvas.width = 7
+  canvas.height = 7
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('Canvas 2D unavailable')
+  ctx.clearRect(0, 0, 7, 7)
+  ctx.fillStyle = '#fff6c2'
+  const glow = [
+    [3, 0],
+    [2, 1],
+    [3, 1],
+    [4, 1],
+    [1, 2],
+    [2, 2],
+    [3, 2],
+    [4, 2],
+    [5, 2],
+    [0, 3],
+    [1, 3],
+    [2, 3],
+    [4, 3],
+    [5, 3],
+    [6, 3],
+    [1, 4],
+    [2, 4],
+    [3, 4],
+    [4, 4],
+    [5, 4],
+    [2, 5],
+    [3, 5],
+    [4, 5],
+    [3, 6],
+  ]
+  for (const [x, y] of glow) ctx.fillRect(x, y, 1, 1)
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(3, 3, 1, 1)
+  const tex = new CanvasTexture(canvas)
+  tex.magFilter = NearestFilter
+  tex.minFilter = NearestFilter
+  tex.colorSpace = SRGBColorSpace
+  tex.needsUpdate = true
+  return tex
+}
+
+function paintCss(color: Color, css: string): void {
+  const rgb = css.match(/rgb\((\d+)[ ,]+(\d+)[ ,]+(\d+)/)
+  if (rgb) {
+    color.setRGB(Number(rgb[1]) / 255, Number(rgb[2]) / 255, Number(rgb[3]) / 255)
+    return
+  }
+  color.set(css)
+}
 
 function makeBillboard(): Sprite {
   const mat = new SpriteMaterial({

@@ -32,6 +32,26 @@ export const FIREFLY_BODY: ReadonlyArray<readonly [number, number]> = [
   [0, 1],
 ]
 export const FIREFLY_LAMP: readonly [number, number] = [0, 0]
+/**
+ * Soft ring around the plus. The lamp has to read across a full bed,
+ * not only as a single logical pixel.
+ */
+export const FIREFLY_GLOW: ReadonlyArray<readonly [number, number]> = [
+  [0, -3],
+  [-1, -2],
+  [0, -2],
+  [1, -2],
+  [-2, -1],
+  [2, -1],
+  [-3, 0],
+  [3, 0],
+  [-2, 1],
+  [2, 1],
+  [-1, 2],
+  [0, 2],
+  [1, 2],
+  [0, 3],
+]
 
 export type TrailPoint = {
   x: number

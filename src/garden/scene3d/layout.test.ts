@@ -9,6 +9,7 @@ import {
   ringJitter,
   stemHeightFromLoudness,
   sunPoseForListenMs,
+  fireflyWorldPosition,
   xzOnRing,
   yawFromPitchT,
 } from './layout'
@@ -32,6 +33,24 @@ function flower(overrides: Partial<FlowerPlant> = {}): FlowerPlant {
     ...overrides,
   }
 }
+
+describe('fireflyWorldPosition', () => {
+  it('sits on the ring and lifts with loudness', () => {
+    const ahead = xzOnRing(0.25)
+    const mid = fireflyWorldPosition(0.25, 0.5, 0, 0)
+    expect(mid.x).toBeCloseTo(ahead.x, 5)
+    expect(mid.z).toBeCloseTo(ahead.z, 5)
+    expect(mid.y).toBeCloseTo(1.15, 5)
+    const loud = fireflyWorldPosition(0.25, 0.5, 1, 0.2)
+    expect(loud.y).toBeGreaterThan(mid.y)
+  })
+
+  it('slides along the ring with stereo pan', () => {
+    const left = fireflyWorldPosition(0.25, 0, 0.4, 0)
+    const right = fireflyWorldPosition(0.25, 1, 0.4, 0)
+    expect(Math.hypot(left.x - right.x, left.z - right.z)).toBeGreaterThan(1)
+  })
+})
 
 describe('xzOnRing', () => {
   it('puts lowest pitch on the left (−X)', () => {

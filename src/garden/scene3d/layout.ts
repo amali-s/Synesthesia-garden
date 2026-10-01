@@ -46,6 +46,29 @@ export function xzOnRing(pitchT: number, radius = RING_RADIUS): { x: number; z: 
   }
 }
 
+/**
+ * Melody lamp among the blooms. Pitch walks the ring, pan slides along it,
+ * loudness lifts it. `bob` is a small vertical offset in meters.
+ */
+export function fireflyWorldPosition(
+  pitchT: number,
+  panT: number,
+  loudnessT: number,
+  bob = 0,
+): { x: number; y: number; z: number } {
+  const pitch = clamp01(pitchT)
+  const yaw = yawFromPitchT(pitch)
+  const { x, z } = xzOnRing(pitch)
+  const tangent = (clamp01(panT) - 0.5) * 1.4
+  const tx = Math.cos(yaw)
+  const tz = Math.sin(yaw)
+  return {
+    x: x + tx * tangent,
+    y: 1.15 + clamp01(loudnessT) * 0.45 + bob,
+    z: z + tz * tangent,
+  }
+}
+
 /** Stem length from frozen loudness. Quiet ~0.75 m, loud ~2.7 m. */
 export function stemHeightFromLoudness(loudnessT: number): number {
   const t = clamp01(loudnessT)

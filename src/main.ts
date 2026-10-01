@@ -306,6 +306,7 @@ function applyView(next: GardenView): void {
       forageRun && !forageRun.done ? forageRun.view(now) : null,
       listenLight,
       duskWeight(duskLinear),
+      livePitchT,
     )
   }
 }
@@ -948,7 +949,7 @@ function frame(now: number): void {
   syncCourtyardCaption()
   const forageView = tickForage(now)
   if (gardenView === 'among' && scene3d) {
-    scene3d.render(garden, now, forageView, listenLight, duskT)
+    scene3d.render(garden, now, forageView, listenLight, duskT, livePitchT)
   } else {
     renderer.draw(garden, now, livePitchT, forageView, listenLight, duskT)
   }

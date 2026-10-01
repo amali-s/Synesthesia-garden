@@ -21,6 +21,7 @@ import {
   fireflyPaint,
   fireflyTarget,
   FIREFLY_BODY,
+  FIREFLY_GLOW,
   FIREFLY_LAMP,
   liveHz,
   POLLEN_HEAD_LIFT,
@@ -216,12 +217,15 @@ export class GardenRenderer {
       }
     }
 
-    this.drawMelody(livePitchT, listen, now)
-
     drawMailbox(ctx, scale, forage?.mailboxFlag ?? false)
     if (forage) this.drawForage(forage)
     ctx.restore()
     this.drawHourGel(garden.listenMs, duskT)
+    // Lamp after the gel, so a dawn veil cannot paint over the bug.
+    ctx.save()
+    ctx.translate(originX, originY)
+    this.drawMelody(livePitchT, listen, now)
+    ctx.restore()
   }
 
   /**
@@ -311,6 +315,11 @@ export class GardenRenderer {
     if (showBug) {
       const x = Math.round(fly.x)
       const y = Math.round(fly.y)
+      ctx.globalAlpha = 0.72
+      ctx.fillStyle = paint.core
+      for (const [dx, dy] of FIREFLY_GLOW) {
+        ctx.fillRect((x + dx) * scale, (y + dy) * scale, scale, scale)
+      }
       ctx.globalAlpha = 1
       ctx.fillStyle = paint.body
       for (const [dx, dy] of FIREFLY_BODY) {
@@ -494,6 +503,9 @@ export class GardenRenderer {
     if (duskT <= 0) return
     const { ctx, viewW, viewH } = this
     ctx.save()
+    // Halo and the lamp use additive blending. A leaked mode would add the
+    // dark wash onto daylight and the night tint would never show.
+    ctx.globalCompositeOperation = 'source-over'
     ctx.globalAlpha = DUSK.washAlpha * duskT
     ctx.fillStyle = DUSK.wash
     ctx.fillRect(0, 0, viewW, viewH)
