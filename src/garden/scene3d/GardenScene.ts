@@ -33,6 +33,15 @@ import { tintedBloomHeadCanvas } from '../bloomArt'
 import { foxImage, mailboxImage } from '../critters'
 import type { ForageView } from '../forage'
 import { glowAmount, type ListenLight } from '../glow'
+import {
+  createOnsetGate,
+  haloBrightness,
+  onsetBrightness,
+  onsetRipple,
+  stepOnsetGate,
+  swayAmplitude,
+  swayPair,
+} from '../motion'
 import { bloomPaintRgb, DUSK, GROUND, hourGelForDusk, PASTEL } from '../palette'
 import { FLOWER_KINDS, type FlowerKind } from '../sprites'
 import { flowerGlow, plantLife, type FlowerPlant, type Garden } from '../world'
@@ -62,8 +71,6 @@ import {
 } from './look'
 
 const POOL_START = 32
-const ONSET_RIPPLE_MS = 140
-const ONSET_PULSE_MS = 200
 
 type InstancePool = {
   mesh: InstancedMesh
@@ -125,6 +132,10 @@ export class GardenScene {
   private readonly carrySprites: Sprite[]
   private readonly pixelTextures = new Map<HTMLImageElement, Texture>()
   private readonly canvasTextures = new Map<HTMLCanvasElement, CanvasTexture>()
+  /** Pitch-class glow from the latest render. Emissive also carries breath and the onset wave. */
+  private resonance = new Map<FlowerPlant, number>()
+  /** Allows an onset crest at most three times a second. */
+  private onsetGate = createOnsetGate()
 
   private constructor(renderer: WebGLRenderer) {
     this.renderer = renderer
@@ -197,7 +208,7 @@ export class GardenScene {
     this.grass = makePool(this.scene, this.grassGeo, this.grassMat, GRASS_COUNT, false)
     this.grass.mesh.count = GRASS_COUNT
     this.grass.mesh.raycast = noopRaycast
-    this.writeGrass(0, 0, true)
+    this.writeGrass(0, 0, true, 0)
 
     this.hemi = new HemisphereLight('#f2efe4', '#d2c4a0', 0.95)
     this.scene.add(this.hemi)
@@ -254,14 +265,11 @@ export class GardenScene {
   }
 
   /**
-   * Pitch-class glow written into emissive (`vInstanceExtra.x`) on the last render, 0–1.
+   * Pitch-class glow from the last render, 0–1.
+   * Emissive on the bloom also includes the loudness breath and the onset wave.
    */
   resonanceOf(plant: FlowerPlant): number {
-    const index = this.bloomAt[plant.kind].indexOf(plant)
-    if (index < 0) return 0
-    const extra = this.blooms[plant.kind].extra
-    if (!extra) return 0
-    return extra.getX(index)
+    return this.resonance.get(plant) ?? 0
   }
 
   render(
@@ -275,6 +283,8 @@ export class GardenScene {
     this.prevNow = now
     this.look.update(dt, this.reducedMotion)
     this.look.apply(this.camera)
+    this.resonance.clear()
+    stepOnsetGate(this.onsetGate, now, garden.lastOnset, this.reducedMotion)
     this.sync(garden, now, forage, listen)
     this.applyHour(garden.listenMs, duskT)
     this.renderer.render(this.scene, this.camera)
@@ -419,7 +429,7 @@ export class GardenScene {
     listen: ListenLight | null,
   ): void {
     this.syncFlowers(garden, now, listen)
-    this.writeGrass(now, garden.lastOnset, this.reducedMotion)
+    this.writeGrass(now, this.onsetGate.spikedAt, this.reducedMotion, listen?.loudnessT ?? 0)
     this.syncForage(forage)
   }
 
@@ -603,13 +613,15 @@ export class GardenScene {
       const wiltScale = life.phase === 'wilt' ? Math.max(0.12, 1 - life.wiltT * 0.55) : 1
       const plantScale = seedGrow * wiltScale
       const stemH = pose.stemHeight * (1 - life.restT * 0.12)
-      const ripple = reduce ? 0 : onsetRippleByYaw(now, garden.lastOnset, pose.yaw)
-      const sway = reduce ? 0 : plantSway(now, pose.x, pose.z, plant.hz)
-      const leanAmp = 0.07 + ripple * 0.1
-      const leanX = Math.sin(sway) * leanAmp
-      const leanZ = Math.cos(sway * 0.65) * leanAmp * 0.45
+      const loudness = listen?.loudnessT ?? 0
+      const across = yawAcross(pose.yaw)
+      const ripple = onsetRipple(now, this.onsetGate.spikedAt, across)
+      const sway = plantSway(now, pose.x, pose.z, plant.hz, loudness, reduce)
+      const leanAmp = 0.07 + (reduce ? 0 : ripple) * 0.03
+      const leanX = sway.lean * leanAmp
+      const leanZ = sway.cross * leanAmp * 0.45
       const nod = 0.62 + life.restT * 0.2 + (plant.kind === 'bell' ? 0.22 : 0)
-      const bloomScale = 1 + ripple * 0.16
+      const bloomScale = 1 + (reduce ? 0 : ripple) * 0.04
 
       this.dummy.position.set(pose.x, 0, pose.z)
       this.dummy.rotation.set(leanX, 0, leanZ)
@@ -629,7 +641,7 @@ export class GardenScene {
       this.dummy.position.set(0, stemH, 0)
       this.euler.set(nod, -pose.yaw, 0, 'YXZ')
       this.dummy.quaternion.setFromEuler(this.euler)
-      this.dummy.scale.set(bloomScale, bloomScale * (1 + ripple * 0.04), bloomScale)
+      this.dummy.scale.set(bloomScale, bloomScale * (1 + (reduce ? 0 : ripple) * 0.01), bloomScale)
       this.dummy.updateMatrix()
       this.worldMat.multiplyMatrices(this.baseMat, this.dummy.matrix)
 
@@ -639,10 +651,12 @@ export class GardenScene {
 
       const pcT = plant.hz > 0 ? pitchClassT(plant.hz) : 0
       const paint = bloomPaintRgb(pcT, plant.pitchT, plant.timbreT, life.wiltT)
-      const glow = flowerGlow(plant, now)
-      const glowAmt = 0.18 * glow.singing + 0.55 * glow.pulse
-      const resonance = glowAmount(plant.hz, listen, plant.wiltStarted !== null)
-      const punch = 1.38 + glowAmt * 1.15
+      const singing = flowerGlow(plant, now).singing
+      const pitchGlow = glowAmount(plant.hz, listen, plant.wiltStarted !== null)
+      this.resonance.set(plant, pitchGlow)
+      const onsetLight = onsetBrightness(this.onsetGate, ripple, now, reduce)
+      const halo = haloBrightness(pitchGlow, now, loudness, onsetLight, reduce)
+      const punch = 1.38 + singing * 0.18 * 1.15
       this.paintColor.setRGB(
         (paint.mid[0] / 255) * punch,
         (paint.mid[1] / 255) * punch,
@@ -655,7 +669,7 @@ export class GardenScene {
         Math.min(0.55, Math.max(0.44, this.paintHsl.l * 0.82)),
       )
       bloom.mesh.setColorAt(kindI, this.paintColor)
-      bloom.extra?.setXY(kindI, resonance, jewelFromSound(plant.pitchT, plant.timbreT))
+      bloom.extra?.setXY(kindI, halo, jewelFromSound(plant.pitchT, plant.timbreT))
       this.bloomAt[plant.kind].push(plant)
       usedKind[plant.kind]++
 
@@ -688,12 +702,12 @@ export class GardenScene {
     }
   }
 
-  private writeGrass(now: number, lastOnset: number, freeze: boolean): void {
+  private writeGrass(now: number, spikedAt: number, freeze: boolean, loudnessT: number): void {
     const mesh = this.grass.mesh
     for (let i = 0; i < GRASS_COUNT; i++) {
       const pose = grassBladePose(i)
       const yaw = Math.atan2(pose.x, -pose.z)
-      const rustle = freeze ? 0 : grassLean(now, lastOnset, yaw, i)
+      const rustle = grassLean(now, spikedAt, yaw, i, loudnessT, freeze)
       this.dummy.position.set(pose.x, 0, pose.z)
       this.dummy.rotation.set(rustle, pose.yaw, rustle * 0.35)
       this.dummy.scale.set(pose.scale, pose.scale, pose.scale)
@@ -841,23 +855,31 @@ function windPhase(x: number, z: number, hz: number): number {
   return ((n >>> 0) % 6283) / 1000
 }
 
-function plantSway(now: number, x: number, z: number, hz: number): number {
-  const phase = windPhase(x, z, hz)
-  const breeze = now / 980 + phase
-  const gust = Math.sin(now / 340 + phase * 1.7) * 0.35
-  return breeze + gust
+function plantSway(
+  now: number,
+  x: number,
+  z: number,
+  hz: number,
+  loudnessT: number,
+  reducedMotion: boolean,
+): { lean: number; cross: number } {
+  return swayPair(now, windPhase(x, z, hz), loudnessT, reducedMotion)
 }
 
-function onsetRippleByYaw(now: number, lastOnset: number, yaw: number): number {
-  if (lastOnset <= 0) return 0
-  const turn = ((yaw / (Math.PI * 2)) % 1 + 1) % 1
-  const local = now - lastOnset - turn * ONSET_RIPPLE_MS
-  if (local < 0) return 0
-  return Math.max(0, 1 - local / ONSET_PULSE_MS)
+function yawAcross(yaw: number): number {
+  return ((yaw / (Math.PI * 2)) % 1 + 1) % 1
 }
 
-function grassLean(now: number, lastOnset: number, yaw: number, index: number): number {
-  const pulse = onsetRippleByYaw(now, lastOnset, yaw)
-  const idle = Math.sin(now / 1100 + index * 0.17) * 0.035
-  return idle + pulse * 0.1
+function grassLean(
+  now: number,
+  spikedAt: number,
+  yaw: number,
+  index: number,
+  loudnessT: number,
+  reducedMotion: boolean,
+): number {
+  if (reducedMotion) return 0
+  const pulse = onsetRipple(now, spikedAt, yawAcross(yaw))
+  const idle = Math.sin(now / 1100 + index * 0.17) * 0.035 * swayAmplitude(loudnessT)
+  return idle + pulse * 0.04
 }

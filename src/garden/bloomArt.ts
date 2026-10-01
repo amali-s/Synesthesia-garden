@@ -231,7 +231,8 @@ export function bloomDrawHeight(
     Math.max(0.42, grow) *
     (1 - restT * 0.1) *
     (1 - wiltT * 0.32) *
-    (1 + onsetPulse * 0.12)
+    // A beat is a wave of light. This only hints at the hit.
+    (1 + onsetPulse * 0.03)
   )
 }
 
@@ -318,8 +319,8 @@ export function bloomLean(
   wiltT: number,
 ): number {
   return (
-    Math.sin(sway) * (0.12 + pitchT * 0.1) * (1 - wiltT) +
-    Math.sin(sway * 2.4) * onsetPulse * 0.16 +
+    sway * (0.12 + pitchT * 0.1) * (1 - wiltT) +
+    sway * onsetPulse * 0.04 +
     restT * 0.18 +
     wiltT * 0.28
   )

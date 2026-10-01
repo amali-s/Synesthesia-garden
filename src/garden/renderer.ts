@@ -32,6 +32,14 @@ import {
 } from './firefly'
 import { glowAmount, type ListenLight } from './glow'
 import {
+  createOnsetGate,
+  haloBrightness,
+  onsetBrightness,
+  onsetRipple,
+  stepOnsetGate,
+  swayDisplacement,
+} from './motion'
+import {
   ACCENTS,
   DUSK,
   GROUND,
@@ -46,8 +54,6 @@ export type RendererOptions = {
   scale: number
 }
 
-const ONSET_RIPPLE_MS = 140
-const ONSET_PULSE_MS = 200
 /** Chrome/Edge “Sharing this tab” chrome is ~40–70px. Height-only changes
  *  inside this slack keep scale, bed geometry, and canvas height so the
  *  courtyard can scroll instead of clipping the front gravel. */
@@ -73,8 +79,10 @@ export class GardenRenderer {
   reducedMotion = false
   /** True after the first real fit; share-bar height jitters must not reflow beds. */
   private fitted = false
-  /** Pitch-class glow from the latest draw, for halo / dusk / firefly / legend. */
+  /** Pitch-class glow from the latest draw, for pollen and the legend. */
   private resonance = new Map<FlowerPlant, number>()
+  /** Allows an onset crest at most three times a second. */
+  private onsetGate = createOnsetGate()
   private firefly = createFirefly()
   /** Sentinel so the first melody frame does not inherit a huge dt. */
   private melodyNow = -1
@@ -193,6 +201,7 @@ export class GardenRenderer {
   ): void {
     const { ctx, scale, originX, originY } = this
     this.resonance.clear()
+    stepOnsetGate(this.onsetGate, now, garden.lastOnset, this.reducedMotion)
     this.ensureBackground(garden.listenMs)
     ctx.drawImage(this.bgCanvas, 0, 0)
     // Veil on the blit, under blooms, so the soil cache stays put and glow stays bright.
@@ -203,7 +212,7 @@ export class GardenRenderer {
 
     for (const bed of bedsBackToFront()) {
       for (const plant of garden.plantsInBed(bed.id)) {
-        this.drawPlant(plant, now, garden.lastOnset, listen)
+        this.drawPlant(plant, now, listen)
       }
     }
 
@@ -382,19 +391,17 @@ export class GardenRenderer {
     this.bgDirty = false
   }
 
-  private drawPlant(
-    plant: Plant,
-    now: number,
-    lastOnset: number,
-    listen: ListenLight | null,
-  ): void {
+  private drawPlant(plant: Plant, now: number, listen: ListenLight | null): void {
     const { ctx, scale, logicalW } = this
     const life = plantLife(plant, now)
     const age = (now - plant.born) / 1000
     const variant = plant.type === 'grass' ? plant.variant : 0
     const reduce = this.reducedMotion
-    const sway = reduce ? 0 : plantSway(now, plant.x, plant.y, variant)
-    const onsetPulse = reduce ? 0 : onsetRipple(now, lastOnset, plant.x, logicalW)
+    const loudness = listen?.loudnessT ?? 0
+    const sway = plantSway(now, plant.x, plant.y, variant, loudness, reduce)
+    const across = plant.x / Math.max(1, logicalW)
+    const ripple = onsetRipple(now, this.onsetGate.spikedAt, across)
+    const onsetPulse = reduce ? 0 : ripple
     const grow = reduce ? 1 : life.grow
     if (plant.type === 'grass') {
       drawGrass(
@@ -413,8 +420,10 @@ export class GardenRenderer {
     const glow = flowerGlow(plant, now)
     const singing = glow.singing
     const pulse = reduce ? 0 : glow.pulse
-    const resonance = glowAmount(plant.hz, listen, plant.wiltStarted !== null)
-    this.resonance.set(plant, resonance)
+    const pitchGlow = glowAmount(plant.hz, listen, plant.wiltStarted !== null)
+    this.resonance.set(plant, pitchGlow)
+    const onsetLight = onsetBrightness(this.onsetGate, ripple, now, reduce)
+    const halo = haloBrightness(pitchGlow, now, loudness, onsetLight, reduce)
     drawFlower(
       ctx,
       plant.x,
@@ -433,7 +442,7 @@ export class GardenRenderer {
       reduce,
       singing,
       pulse,
-      resonance,
+      halo,
     )
   }
 
@@ -574,17 +583,13 @@ function windPhase(x: number, y: number, variant: number): number {
   return ((n >>> 0) % 6283) / 1000
 }
 
-function plantSway(now: number, x: number, y: number, variant: number): number {
-  const phase = windPhase(x, y, variant)
-  const breeze = now / 980 + phase
-  const gust = Math.sin(now / 340 + phase * 1.7) * 0.35
-  return breeze + gust
-}
-
-function onsetRipple(now: number, lastOnset: number, x: number, logicalW: number): number {
-  if (lastOnset <= 0) return 0
-  const delay = (x / Math.max(1, logicalW)) * ONSET_RIPPLE_MS
-  const local = now - lastOnset - delay
-  if (local < 0) return 0
-  return Math.max(0, 1 - local / ONSET_PULSE_MS)
+function plantSway(
+  now: number,
+  x: number,
+  y: number,
+  variant: number,
+  loudnessT: number,
+  reducedMotion: boolean,
+): number {
+  return swayDisplacement(now, windPhase(x, y, variant), loudnessT, reducedMotion)
 }
