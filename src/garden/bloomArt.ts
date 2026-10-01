@@ -70,13 +70,18 @@ export function bloomHeadMask(
   const mask = new Uint8Array(sheet.w * sheet.h)
   const src = sheet.data
   for (let p = 0, i = 0; p < mask.length; p++, i += 4) {
-    const role = classify(src[i]!, src[i + 1]!, src[i + 2]!, src[i + 3]!)
+    const role = classifyBloomPixel(src[i]!, src[i + 1]!, src[i + 2]!, src[i + 3]!)
     if (role === 'lite' || role === 'mid' || role === 'deep' || role === 'center') mask[p] = 1
   }
   return { w: sheet.w, h: sheet.h, mask }
 }
 
-function classify(r: number, g: number, b: number, a: number): 'skip' | 'keep' | 'lite' | 'mid' | 'deep' | 'center' {
+export function classifyBloomPixel(
+  r: number,
+  g: number,
+  b: number,
+  a: number,
+): 'skip' | 'keep' | 'lite' | 'mid' | 'deep' | 'center' {
   if (a < 20 || r + g + b < 18) return 'skip'
   if (g >= r + 6 && g >= b - 12 && g > 36) return 'keep'
   if (r > 200 && g > 155 && b < 175 && g > b + 15) return 'center'
@@ -129,7 +134,7 @@ export function tintedBloomHeadCanvas(
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       const i = (y * w + x) * 4
-      const role = classify(src[i]!, src[i + 1]!, src[i + 2]!, src[i + 3]!)
+      const role = classifyBloomPixel(src[i]!, src[i + 1]!, src[i + 2]!, src[i + 3]!)
       if (role === 'skip' || role === 'keep') {
         dst[i + 3] = 0
         continue
@@ -197,7 +202,7 @@ function tintedSheet(
     const r = src[i]!
     const g = src[i + 1]!
     const b = src[i + 2]!
-    const role = classify(r, g, b, a)
+    const role = classifyBloomPixel(r, g, b, a)
     if (role === 'skip') continue
     let rgb: Rgb
     if (role === 'keep') rgb = [r, g, b]

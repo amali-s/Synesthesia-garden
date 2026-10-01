@@ -10,7 +10,14 @@ import {
   paintCorePixels,
   pitchClassIndex,
 } from './halo'
-import { emissiveGlowPair, type Rgb } from './palette'
+import {
+  BLOOM_GLOW_BODY,
+  BLOOM_GLOW_CORE,
+  BLOOM_HEX,
+  emissiveFromPitchClass,
+  emissiveGlowPair,
+  type Rgb,
+} from './palette'
 
 function at(data: Uint8ClampedArray, cols: number, x: number, y: number): number[] {
   const i = (y * cols + x) * 4
@@ -69,6 +76,28 @@ describe('emissiveGlowPair', () => {
       bodies.push(body.join(','))
     }
     expect(new Set(bodies).size).toBeGreaterThan(6)
+  })
+})
+
+describe('emissiveFromPitchClass', () => {
+  it('returns a saturated body and a pale core for a 0–1 pitch class', () => {
+    const bodies: string[] = []
+    for (let i = 0; i < 12; i++) {
+      const pcT = i / 12
+      const { body, core } = emissiveFromPitchClass(pcT)
+      expect(emissiveGlowPair(i)).toEqual({ body, core })
+      expect(hueDistance(hueOf(body), hueOf(core))).toBeLessThan(8)
+      expect(Math.min(...core)).toBeGreaterThan(200)
+      expect(Math.max(...body) - Math.min(...body)).toBeGreaterThan(40)
+      expect(Math.max(...body)).toBeLessThan(230)
+      bodies.push(body.join(','))
+    }
+    expect(new Set(bodies).size).toBe(12)
+    expect(BLOOM_GLOW_BODY).not.toContain(BLOOM_HEX.cream)
+    expect(BLOOM_GLOW_CORE).not.toContain(BLOOM_HEX.cream)
+    expect(emissiveFromPitchClass(1)).toEqual(emissiveFromPitchClass(0))
+    expect(emissiveFromPitchClass(1.25)).toEqual(emissiveFromPitchClass(0.25))
+    expect(emissiveFromPitchClass(-0.25)).toEqual(emissiveFromPitchClass(0.75))
   })
 })
 

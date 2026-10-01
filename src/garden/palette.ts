@@ -221,6 +221,30 @@ export const BLOOM_JEWEL = [
   BLOOM_HEX.amber,
 ] as const
 
+/**
+ * Emissive glow for the same note-class index as the soft and jewel walks.
+ * Stops: cyan, green, violet, gold, rose, vermilion.
+ * Body is a saturated middle. Core is near-white in that hue.
+ * Cream is not in this pair — it muddies light on the dark court.
+ */
+export const BLOOM_GLOW_BODY = [
+  '#12C0E2',
+  '#12E251',
+  '#5F12E2',
+  '#E2A712',
+  '#E2127A',
+  '#E24A12',
+] as const
+
+export const BLOOM_GLOW_CORE = [
+  '#D7EFF4',
+  '#D7F4E0',
+  '#E2D7F4',
+  '#F4ECD7',
+  '#F4D7E6',
+  '#F4DFD7',
+] as const
+
 export type Hsl = { h: number; s: number; l: number }
 export type Rgb = [number, number, number]
 
@@ -316,20 +340,48 @@ export function hueFromPitchClass(pcT: number): number {
   return colorFromBloom(pcT, 0.45, 0.5).h
 }
 
+const GLOW_BODY_HSL = BLOOM_GLOW_BODY.map((hex) => rgbToHsl(hexToRgb(hex)))
+const GLOW_CORE_HSL = BLOOM_GLOW_CORE.map((hex) => rgbToHsl(hexToRgb(hex)))
+
+/** Shortest arc, so a step across red does not walk the long way through green. */
+function lerpHue(a: number, b: number, t: number): number {
+  let d = ((b - a) % 360 + 360) % 360
+  if (d > 180) d -= 360
+  return (a + d * t + 360) % 360
+}
+
+function lerpHsl(a: Hsl, b: Hsl, t: number): Hsl {
+  return {
+    h: lerpHue(a.h, b.h, t),
+    s: a.s + (b.s - a.s) * t,
+    l: a.l + (b.l - a.l) * t,
+  }
+}
+
 /**
- * Light a resonating bloom emits, one pair per pitch class.
- * Body is that class's hue, bright enough to add; core is near-white in the same hue.
- * Daytime petals stay on `bloomPaintRgb` — this pair is not a petal tint.
+ * Body and core for a pitch class in 0–1 (same circle as `colorFromBloom`).
+ * Walked in hue so the core stays in the body family between stops.
+ * Daytime petals stay on `bloomPaintRgb`.
  */
+export function emissiveFromPitchClass(pcT: number): { body: Rgb; core: Rgb } {
+  const n = BLOOM_GLOW_BODY.length
+  const x = (((pcT % 1) + 1) % 1) * n
+  const i = Math.floor(x) % n
+  const f = x - Math.floor(x)
+  const j = (i + 1) % n
+  if (f === 0) {
+    return { body: hexToRgb(BLOOM_GLOW_BODY[i]!), core: hexToRgb(BLOOM_GLOW_CORE[i]!) }
+  }
+  return {
+    body: hslToRgb(lerpHsl(GLOW_BODY_HSL[i]!, GLOW_BODY_HSL[j]!, f)),
+    core: hslToRgb(lerpHsl(GLOW_CORE_HSL[i]!, GLOW_CORE_HSL[j]!, f)),
+  }
+}
+
+/** Index 0–11, same pair as {@link emissiveFromPitchClass}. */
 export function emissiveGlowPair(pitchClass: number): { body: Rgb; core: Rgb } {
   const pc = ((Math.round(pitchClass) % 12) + 12) % 12
-  const mid = colorFromBloom(pc / 12, 0.55, 0.5)
-  const body = hslToRgb({
-    h: mid.h,
-    s: Math.min(74, Math.max(58, mid.s)),
-    l: 54,
-  })
-  return { body, core: mixRgb(body, [255, 255, 255], 0.82) }
+  return emissiveFromPitchClass(pc / 12)
 }
 
 export function bloomDeep(mid: Hsl, pitchT: number, timbreT: number): string {
